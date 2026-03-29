@@ -5,6 +5,7 @@ export class MockVideoElement {
   clientWidth = 640;
   clientHeight = 480;
   dataset: Record<string, string>;
+  playRejectError: Error | null = null;
   private listeners = new Map<string, Set<Function>>();
 
   constructor(videoId: string = 'testVid1') {
@@ -12,6 +13,9 @@ export class MockVideoElement {
   }
 
   play(): Promise<void> {
+    if (this.playRejectError !== null) {
+      return Promise.reject(this.playRejectError);
+    }
     this.paused = false;
     this.emit('play');
     return Promise.resolve();

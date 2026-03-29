@@ -23,8 +23,13 @@ function render(): void {
   // Status text
   statusEl.className = 'status';
   if (data.state === 'DISCONNECTED') {
-    statusEl.textContent = data.isConnecting ? 'Connecting...' : 'Disconnected';
-    statusEl.classList.add('disconnected');
+    if (data.isReconnecting) {
+      statusEl.textContent = 'Reconnecting...';
+      statusEl.classList.add('reconnecting');
+    } else {
+      statusEl.textContent = data.isConnecting ? 'Connecting...' : 'Disconnected';
+      statusEl.classList.add('disconnected');
+    }
   } else if (data.state === 'CONNECTED') {
     statusEl.textContent = 'Connected';
     statusEl.classList.add('connected');
@@ -95,6 +100,9 @@ chrome.runtime.onMessage.addListener((message: unknown) => {
       peerCount = 0;
     } else if (msg.state === 'DISCONNECTED') {
       machine.onDisconnected();
+      peerCount = 0;
+    } else if (msg.state === 'RECONNECTING') {
+      machine.onReconnecting();
       peerCount = 0;
     } else if (msg.state === 'IN_ROOM') {
       machine.onRoomJoined(msg.roomCode ?? '');

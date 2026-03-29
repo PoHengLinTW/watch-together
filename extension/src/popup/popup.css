@@ -35,6 +35,15 @@ body {
 .status.connected { color: #34d399; }
 .status.in-room { color: #60a5fa; }
 .status.disconnected { color: #f87171; }
+.status.reconnecting {
+  color: #fbbf24;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
 
 .room-display {
   background: #16213e;
@@ -106,7 +115,16 @@ button {
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  transition: opacity 0.15s;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+button:hover:not(:disabled) {
+  opacity: 0.85;
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 button:disabled {

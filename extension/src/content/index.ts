@@ -1,5 +1,6 @@
 import { VideoController } from './VideoController';
 import { VideoDetector } from './VideoDetector';
+import { showAutoplayOverlay } from './AutoplayOverlay';
 import type { BackgroundMessage, ContentMessage } from '../shared/messages';
 
 interface ContentScriptOptions {
@@ -21,6 +22,7 @@ export function initContentScript(options: ContentScriptOptions): {
     },
     document,
     requestAnimationFrame: raf,
+    onAutoplayBlocked: showAutoplayOverlay,
   });
 
   const detector = new VideoDetector({

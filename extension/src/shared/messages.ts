@@ -15,7 +15,7 @@ export type PopupMessage =
 
 /** Sent from background service worker to popup via chrome.runtime.sendMessage */
 export type BackgroundToPopupMessage =
-  | { type: 'state-update'; state: 'DISCONNECTED' | 'CONNECTED' | 'IN_ROOM'; roomCode: string | null; peerCount: number }
+  | { type: 'state-update'; state: 'DISCONNECTED' | 'CONNECTED' | 'IN_ROOM' | 'RECONNECTING'; roomCode: string | null; peerCount: number }
   | { type: 'peer-joined' }
   | { type: 'peer-left' }
-  | { type: 'error'; message: string };
+  | { type: 'error'; message: string; errorCode?: string };

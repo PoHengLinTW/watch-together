@@ -1,6 +1,6 @@
 import type { ClientMessage, ServerMessage } from '@watchtogether/shared';
 
-export type ConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'IN_ROOM';
+export type ConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'IN_ROOM' | 'RECONNECTING';
 
 interface ConnectionManagerOptions {
   wsFactory?: (url: string) => WebSocket;
@@ -48,7 +48,7 @@ export class ConnectionManager {
   }
 
   connect(url: string): void {
-    if (this.state !== 'DISCONNECTED') {
+    if (this.state !== 'DISCONNECTED' && this.state !== 'RECONNECTING') {
       throw new Error(`Cannot connect: already in state ${this.state}`);
     }
     this.url = url;
@@ -68,11 +68,15 @@ export class ConnectionManager {
       throw new Error('Cannot send: not connected');
     }
     const serialized = JSON.stringify(message);
-    if (this.state === 'CONNECTING') {
+    if (this.state === 'CONNECTING' || this.state === 'RECONNECTING') {
       this.messageQueue.push(serialized);
       return;
     }
     this.ws!.send(serialized);
+  }
+
+  clearRoom(): void {
+    this.roomCode = null;
   }
 
   private openSocket(): void {
@@ -124,15 +128,17 @@ export class ConnectionManager {
   private handleDisconnect(): void {
     this.clearHeartbeat();
     this.ws = null;
-    this.setState('DISCONNECTED');
 
     if (this.retryCount < MAX_RETRIES) {
+      this.setState('RECONNECTING');
       const delay = backoffMs(this.retryCount);
       this.retryCount++;
       this.retryTimer = setTimeout(() => {
         this.retryTimer = null;
         this.openSocket();
       }, delay);
+    } else {
+      this.setState('DISCONNECTED');
     }
   }
 
@@ -149,15 +155,7 @@ export class ConnectionManager {
       // No ping received in time — force reconnect
       this.ws?.close(4000, 'heartbeat timeout');
       this.ws = null;
-      this.setState('DISCONNECTED');
-      if (this.retryCount < MAX_RETRIES) {
-        const delay = backoffMs(this.retryCount);
-        this.retryCount++;
-        this.retryTimer = setTimeout(() => {
-          this.retryTimer = null;
-          this.openSocket();
-        }, delay);
-      }
+      this.handleDisconnect();
     }, HEARTBEAT_TIMEOUT_MS);
   }
 

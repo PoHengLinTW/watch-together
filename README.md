@@ -67,6 +67,12 @@ Tests are written using `vitest` and cover both unit and integration specs. Run 
 npm test
 ```
 
+To run end-to-end (e2e) tests using Puppeteer and Vitest:
+
+```bash
+npm run test:e2e
+```
+
 Or you can run `npm test` inside a specific workspace directory like `server` or `extension`.
 
 ### Typechecking

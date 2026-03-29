@@ -573,4 +573,76 @@ describe('VideoController', () => {
       expect(controller.getActiveVideoId()).toBe('vid2');
     });
   });
+
+  describe('autoplay rejection', () => {
+    it('should call onAutoplayBlocked when play() rejects with NotAllowedError', async () => {
+      const v1 = new MockVideoElement('vid1');
+      v1.playRejectError = new DOMException('play() failed', 'NotAllowedError');
+      const mockDoc = setupDomMocks([v1]);
+      mockDoc.querySelector = vi.fn(() => v1 as unknown as Element);
+
+      const onAutoplayBlocked = vi.fn();
+      const { onSyncEvent } = makeSyncCapture();
+      const controller = new VideoController({
+        onSyncEvent,
+        document: mockDoc as unknown as Document,
+        requestAnimationFrame: mockRaf,
+        onAutoplayBlocked,
+      });
+      controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
+
+      const event = { action: 'play' as const, currentTime: 0, timestamp: Date.now(), videoId: 'vid1' };
+      controller.applyRemoteEvent(event);
+
+      // Wait for the rejected promise to propagate
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(onAutoplayBlocked).toHaveBeenCalledWith(v1, event);
+    });
+
+    it('should not call onAutoplayBlocked when play() succeeds', async () => {
+      const v1 = new MockVideoElement('vid1');
+      const mockDoc = setupDomMocks([v1]);
+      mockDoc.querySelector = vi.fn(() => v1 as unknown as Element);
+
+      const onAutoplayBlocked = vi.fn();
+      const { onSyncEvent } = makeSyncCapture();
+      const controller = new VideoController({
+        onSyncEvent,
+        document: mockDoc as unknown as Document,
+        requestAnimationFrame: mockRaf,
+        onAutoplayBlocked,
+      });
+      controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
+
+      controller.applyRemoteEvent({ action: 'play', currentTime: 0, timestamp: Date.now(), videoId: 'vid1' });
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(onAutoplayBlocked).not.toHaveBeenCalled();
+    });
+
+    it('should not call onAutoplayBlocked for non-NotAllowedError rejections', async () => {
+      const v1 = new MockVideoElement('vid1');
+      v1.playRejectError = new DOMException('aborted', 'AbortError');
+      const mockDoc = setupDomMocks([v1]);
+      mockDoc.querySelector = vi.fn(() => v1 as unknown as Element);
+
+      const onAutoplayBlocked = vi.fn();
+      const { onSyncEvent } = makeSyncCapture();
+      const controller = new VideoController({
+        onSyncEvent,
+        document: mockDoc as unknown as Document,
+        requestAnimationFrame: mockRaf,
+        onAutoplayBlocked,
+      });
+      controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
+
+      controller.applyRemoteEvent({ action: 'play', currentTime: 0, timestamp: Date.now(), videoId: 'vid1' });
+
+      await new Promise(resolve => setTimeout(resolve, 0));
+
+      expect(onAutoplayBlocked).not.toHaveBeenCalled();
+    });
+  });
 });

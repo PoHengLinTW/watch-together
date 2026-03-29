@@ -5,6 +5,7 @@ export interface PopupStateData {
   roomCode: string | null;
   peerCount: number;
   isConnecting: boolean;
+  isReconnecting: boolean;
 }
 
 export interface ButtonStates {
@@ -19,6 +20,7 @@ export class PopupStateMachine {
     roomCode: null,
     peerCount: 0,
     isConnecting: false,
+    isReconnecting: false,
   };
 
   getState(): PopupStateData {
@@ -32,6 +34,7 @@ export class PopupStateMachine {
   onConnected(): void {
     this.data.state = 'CONNECTED';
     this.data.isConnecting = false;
+    this.data.isReconnecting = false;
     this.data.roomCode = null;
     this.data.peerCount = 0;
   }
@@ -39,8 +42,15 @@ export class PopupStateMachine {
   onDisconnected(): void {
     this.data.state = 'DISCONNECTED';
     this.data.isConnecting = false;
+    this.data.isReconnecting = false;
     this.data.roomCode = null;
     this.data.peerCount = 0;
+  }
+
+  onReconnecting(): void {
+    this.data.state = 'DISCONNECTED';
+    this.data.isReconnecting = true;
+    this.data.isConnecting = false;
   }
 
   onRoomJoined(code: string): void {
@@ -68,7 +78,10 @@ export class PopupStateMachine {
   }
 
   getButtonStates(): ButtonStates {
-    const { state, isConnecting } = this.data;
+    const { state, isConnecting, isReconnecting } = this.data;
+    if (isReconnecting) {
+      return { joinDisabled: true, createDisabled: true, leaveDisabled: true };
+    }
     return {
       joinDisabled: state !== 'CONNECTED' || isConnecting,
       createDisabled: state !== 'CONNECTED' || isConnecting,

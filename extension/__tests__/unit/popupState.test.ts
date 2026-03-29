@@ -61,6 +61,34 @@ describe('PopupStateMachine', () => {
     expect(machine.getButtonStates().joinDisabled).toBe(true);
   });
 
+  it('should set isReconnecting on onReconnecting()', () => {
+    machine.onConnected();
+    machine.onReconnecting();
+    expect(machine.getState().isReconnecting).toBe(true);
+    expect(machine.getState().state).toBe('DISCONNECTED');
+  });
+
+  it('should clear isReconnecting on onConnected()', () => {
+    machine.onReconnecting();
+    machine.onConnected();
+    expect(machine.getState().isReconnecting).toBe(false);
+  });
+
+  it('should clear isReconnecting on onDisconnected()', () => {
+    machine.onReconnecting();
+    machine.onDisconnected();
+    expect(machine.getState().isReconnecting).toBe(false);
+  });
+
+  it('should disable all buttons when reconnecting', () => {
+    machine.onConnected();
+    machine.onReconnecting();
+    const buttons = machine.getButtonStates();
+    expect(buttons.createDisabled).toBe(true);
+    expect(buttons.joinDisabled).toBe(true);
+    expect(buttons.leaveDisabled).toBe(true);
+  });
+
   it('should validate room code format before sending join', () => {
     // Valid: 6 alphanumeric chars
     expect(machine.validateRoomCode('ABC123')).toBe(true);

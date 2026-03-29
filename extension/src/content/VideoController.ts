@@ -6,12 +6,14 @@ interface VideoControllerOptions {
   onSyncEvent: (event: SyncEvent) => void;
   document?: Pick<Document, 'querySelector' | 'querySelectorAll'>;
   requestAnimationFrame?: RafFn;
+  onAutoplayBlocked?: (video: HTMLVideoElement, event: SyncEvent) => void;
 }
 
 export class VideoController {
   private onSyncEvent: (event: SyncEvent) => void;
   private doc: Pick<Document, 'querySelector' | 'querySelectorAll'>;
   private raf: RafFn;
+  private onAutoplayBlocked: ((video: HTMLVideoElement, event: SyncEvent) => void) | undefined;
   private videos: HTMLVideoElement[] = [];
   private activeVideo: HTMLVideoElement | null = null;
   private suppressEvents = false;
@@ -21,6 +23,7 @@ export class VideoController {
     this.onSyncEvent = options.onSyncEvent;
     this.doc = options.document ?? document;
     this.raf = options.requestAnimationFrame ?? requestAnimationFrame.bind(globalThis);
+    this.onAutoplayBlocked = options.onAutoplayBlocked;
   }
 
   attachVideos(videos: HTMLVideoElement[]): void {
@@ -52,7 +55,13 @@ export class VideoController {
       case 'play': {
         const latency = (Date.now() - event.timestamp) / 1000;
         video.currentTime = event.currentTime + latency;
-        video.play();
+        video.play().catch((err: unknown) => {
+          if (err instanceof DOMException && err.name === 'NotAllowedError') {
+            this.onAutoplayBlocked?.(video, event);
+          }
+          // Other errors (AbortError etc.) are ignored — browser aborts play() when
+          // a new load or pause() interrupts; this is expected and not an error.
+        });
         this.activeVideo = video;
         break;
       }

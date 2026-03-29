@@ -53,7 +53,7 @@ describe('ConnectionManager', () => {
       expect(() => manager.connect(SERVER_URL)).toThrow();
     });
 
-    it('should handle connection failure with error callback', () => {
+    it('should handle connection failure by entering RECONNECTING state', () => {
       const { factory, instances } = createWsFactory();
       const states: string[] = [];
       const manager = new ConnectionManager({
@@ -64,7 +64,8 @@ describe('ConnectionManager', () => {
       manager.connect(SERVER_URL);
       instances[0].simulateError();
 
-      expect(manager.getState()).toBe('DISCONNECTED');
+      // First failure with retries remaining → RECONNECTING, not DISCONNECTED
+      expect(manager.getState()).toBe('RECONNECTING');
     });
   });
 
@@ -221,6 +222,102 @@ describe('ConnectionManager', () => {
       // Connection should have been closed and a reconnect attempted after backoff
       vi.advanceTimersByTime(1000);
       expect(instances.length).toBeGreaterThan(1);
+    });
+  });
+
+  describe('reconnecting state', () => {
+    it('should enter RECONNECTING state (not DISCONNECTED) on abnormal close when retries remain', () => {
+      const { factory, instances } = createWsFactory();
+      const states: string[] = [];
+      const manager = new ConnectionManager({
+        wsFactory: factory as unknown as (url: string) => WebSocket,
+        onStateChange: (s) => states.push(s),
+      });
+
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      instances[0].simulateClose(1006); // abnormal closure
+
+      expect(manager.getState()).toBe('RECONNECTING');
+      expect(states).toContain('RECONNECTING');
+      expect(states).not.toContain('DISCONNECTED');
+    });
+
+    it('should enter DISCONNECTED state after exhausting all retries', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+
+      manager.connect(SERVER_URL);
+
+      // Each close+advance fires the retry and opens a new socket.
+      // After 5 retries (retryCount reaches MAX_RETRIES=5), the 6th close gets DISCONNECTED.
+      for (let i = 0; i < 5; i++) {
+        instances[instances.length - 1].simulateClose(1006);
+        vi.advanceTimersByTime(30001); // advance past backoff, opens next socket
+      }
+      // Close the 6th socket — retryCount=5 = MAX_RETRIES → DISCONNECTED
+      instances[instances.length - 1].simulateClose(1006);
+
+      expect(manager.getState()).toBe('DISCONNECTED');
+    });
+
+    it('should enter RECONNECTING on heartbeat timeout when retries remain', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+
+      // Advance just past heartbeat timeout (45s) but before first retry fires (1s later)
+      vi.advanceTimersByTime(45001);
+
+      expect(manager.getState()).toBe('RECONNECTING');
+    });
+
+    it('should queue messages while RECONNECTING and flush on reconnect', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      instances[0].simulateClose(1006); // triggers RECONNECTING
+
+      expect(manager.getState()).toBe('RECONNECTING');
+
+      // Should not throw — messages should be queued
+      expect(() => manager.send({ type: 'create-room' })).not.toThrow();
+
+      // Advance timer so reconnect fires
+      vi.advanceTimersByTime(1000);
+      instances[1].simulateOpen();
+
+      // Queued message should have been flushed
+      const sent = instances[1].send.mock.calls.map(([d]: [string]) => JSON.parse(d));
+      expect(sent).toContainEqual({ type: 'create-room' });
+    });
+
+    it('should clear room code on clearRoom() to prevent auto-rejoin', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      manager.send({ type: 'join-room', code: 'ABC123' });
+      instances[0].simulateMessage({ type: 'room-joined', code: 'ABC123', peerId: 'p1', state: null });
+      manager.setState('IN_ROOM');
+
+      // Clear the room before disconnect
+      manager.clearRoom();
+
+      // Reconnect
+      instances[0].simulateClose(1006);
+      vi.advanceTimersByTime(1000);
+      instances[1].simulateOpen();
+
+      // Should NOT send join-room on reconnect
+      const sent = instances[1].send.mock.calls.map(([d]: [string]) => JSON.parse(d));
+      const joinMsg = sent.find((m: { type: string }) => m.type === 'join-room');
+      expect(joinMsg).toBeUndefined();
     });
   });
 });

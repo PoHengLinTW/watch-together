@@ -53,7 +53,11 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
       } else if (msg.type === 'peer-left') {
         sendToPopup({ type: 'peer-left' });
       } else if (msg.type === 'error') {
-        sendToPopup({ type: 'error', message: msg.message });
+        if (msg.errorCode === 'ROOM_NOT_FOUND') {
+          connectionManager.clearRoom();
+          sendToPopup({ type: 'state-update', state: 'CONNECTED', roomCode: null, peerCount: 0 });
+        }
+        sendToPopup({ type: 'error', message: msg.message, errorCode: msg.errorCode });
       }
     },
     onStateChange: (state) => {
@@ -61,6 +65,8 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
         sendToPopup({ type: 'state-update', state: 'CONNECTED', roomCode: null, peerCount: 0 });
       } else if (state === 'DISCONNECTED') {
         sendToPopup({ type: 'state-update', state: 'DISCONNECTED', roomCode: null, peerCount: 0 });
+      } else if (state === 'RECONNECTING') {
+        sendToPopup({ type: 'state-update', state: 'RECONNECTING', roomCode: null, peerCount: 0 });
       }
     },
   });
@@ -80,6 +86,7 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
       const connState = connectionManager.getState();
       const popupState = connState === 'IN_ROOM' ? 'IN_ROOM'
         : connState === 'CONNECTED' ? 'CONNECTED'
+        : connState === 'RECONNECTING' ? 'RECONNECTING'
         : 'DISCONNECTED';
       sendToPopup({ type: 'state-update', state: popupState, roomCode: null, peerCount: 0 });
     }

@@ -40,3 +40,8 @@ export function initContentScript(options: ContentScriptOptions): {
 
   return { controller, detector };
 }
+
+// Auto-init when running as extension (guard against test environments)
+if (typeof globalThis.chrome !== 'undefined' && globalThis.chrome?.runtime != null) {
+  initContentScript({ chrome: globalThis.chrome, document });
+}

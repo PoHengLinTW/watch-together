@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WatchTogether</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h1 class="title">WatchTogether</h1>
+
+    <div id="status" class="status">Connecting...</div>
+
+    <div id="room-display" class="room-display hidden">
+      <div class="label">Room Code</div>
+      <div id="room-code-display" class="room-code"></div>
+      <div class="peers-row">
+        <span class="label">Peers:</span>
+        <span id="peer-count">1</span>
+      </div>
+    </div>
+
+    <div id="join-section" class="join-section">
+      <input
+        id="room-code-input"
+        type="text"
+        placeholder="Enter room code"
+        maxlength="6"
+        autocomplete="off"
+        spellcheck="false"
+      >
+    </div>
+
+    <div class="actions">
+      <button id="create-room-btn" disabled>Create Room</button>
+      <button id="join-room-btn" disabled>Join Room</button>
+      <button id="leave-room-btn" disabled>Leave Room</button>
+    </div>
+
+    <div id="error-msg" class="error hidden"></div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

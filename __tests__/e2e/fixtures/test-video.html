@@ -5,7 +5,7 @@
   <title>WatchTogether Test Page</title>
   <style>
     .vjscontainer { max-width: 640px; margin: 20px auto; }
-    video { width: 100%; }
+    video { width: 100%; background: #000; }
   </style>
 </head>
 <body>
@@ -18,21 +18,49 @@
       controls
       preload="auto"
     >
-      <source src="data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDE=" type="video/mp4">
     </video>
   </div>
 
-  <div class="vjscontainer">
-    <video
-      id="vjs-testVid2"
-      data-vid="testVid2"
-      data-tserver="pt2"
-      class="video-js vjs-big-play-centered"
-      controls
-      preload="auto"
-    >
-      <source src="data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDE=" type="video/mp4">
-    </video>
-  </div>
+  <script>
+    // Generate a 10-second playable video using Canvas + MediaRecorder
+    (function () {
+      const canvas = document.createElement('canvas');
+      canvas.width = 320;
+      canvas.height = 180;
+      const ctx = canvas.getContext('2d');
+
+      // Draw a simple color pattern
+      let hue = 0;
+      function drawFrame() {
+        ctx.fillStyle = 'hsl(' + hue + ', 70%, 50%)';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = 'white';
+        ctx.font = '24px monospace';
+        ctx.fillText('WatchTogether Test', 40, 100);
+        hue = (hue + 2) % 360;
+      }
+
+      const stream = canvas.captureStream(30);
+      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm; codecs=vp8' });
+      const chunks = [];
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const video = document.getElementById('vjs-testVid1');
+        video.src = url;
+        video.load();
+      };
+
+      // Record 3 seconds of animation
+      recorder.start();
+      const interval = setInterval(drawFrame, 1000 / 30);
+      setTimeout(() => {
+        clearInterval(interval);
+        recorder.stop();
+      }, 3000);
+    })();
+  </script>
 </body>
 </html>

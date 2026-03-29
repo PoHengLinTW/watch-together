@@ -1,0 +1,140 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  width: 260px;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  background: #1a1a2e;
+  color: #e0e0e0;
+}
+
+.container {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #a78bfa;
+  text-align: center;
+}
+
+.status {
+  text-align: center;
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.status.connected { color: #34d399; }
+.status.in-room { color: #60a5fa; }
+.status.disconnected { color: #f87171; }
+
+.room-display {
+  background: #16213e;
+  border-radius: 8px;
+  padding: 12px;
+  text-align: center;
+}
+
+.room-display .label {
+  font-size: 11px;
+  color: #9ca3af;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+
+.room-code {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #a78bfa;
+  font-family: monospace;
+}
+
+.peers-row {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #9ca3af;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+
+.peers-row #peer-count {
+  color: #e0e0e0;
+  font-weight: 600;
+}
+
+.join-section input {
+  width: 100%;
+  padding: 8px 10px;
+  background: #16213e;
+  border: 1px solid #374151;
+  border-radius: 6px;
+  color: #e0e0e0;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-family: monospace;
+  text-align: center;
+  outline: none;
+}
+
+.join-section input:focus {
+  border-color: #a78bfa;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+button {
+  flex: 1;
+  padding: 8px 4px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: opacity 0.15s;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+#create-room-btn {
+  background: #7c3aed;
+  color: white;
+}
+
+#join-room-btn {
+  background: #2563eb;
+  color: white;
+}
+
+#leave-room-btn {
+  background: #dc2626;
+  color: white;
+}
+
+.error {
+  color: #f87171;
+  font-size: 12px;
+  text-align: center;
+}
+
+.hidden {
+  display: none !important;
+}

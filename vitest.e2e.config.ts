@@ -5,17 +5,17 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  define: {
-    __SERVER_URL__: JSON.stringify('ws://localhost:8080'),
-  },
   resolve: {
     alias: {
-      '@watchtogether/shared': path.resolve(__dirname, '../shared/protocol.ts'),
+      '@watchtogether/shared': path.resolve(__dirname, 'shared/protocol.ts'),
     },
   },
   test: {
     globals: true,
-    include: ['__tests__/**/*.test.ts'],
-    passWithNoTests: true,
+    include: ['__tests__/e2e/**/*.test.ts'],
+    testTimeout: 90000,
+    hookTimeout: 120000,
+    singleThread: true,
+    reporters: ['verbose'],
   },
 });

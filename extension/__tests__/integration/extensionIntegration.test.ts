@@ -17,6 +17,7 @@ function createIntegrationChrome() {
 
   const bgChrome = {
     runtime: {
+      sendMessage: vi.fn().mockResolvedValue(undefined),
       onMessage: {
         addListener: (fn: MessageListener) => bgListeners.push(fn),
         removeListener: (fn: MessageListener) => {

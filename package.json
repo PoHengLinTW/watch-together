@@ -8,6 +8,10 @@
   ],
   "scripts": {
     "test": "npm test --workspaces --if-present",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "typecheck": "tsc --noEmit --project server/tsconfig.json && tsc --noEmit --project extension/tsconfig.json"
+  },
+  "devDependencies": {
+    "puppeteer": "^24.40.0"
   }
 }

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const watch = process.argv.includes('--watch');
-const serverUrl = process.env.SERVER_URL ?? 'wss://watchtogether.example.com';
+const serverUrl = process.env.SERVER_URL ?? 'wss://watchtogether.henrylin.dev';
 const e2eTest = process.env.E2E_TEST === '1';
 
 const sharedAlias = {

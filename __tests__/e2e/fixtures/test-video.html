@@ -53,13 +53,13 @@
         video.load();
       };
 
-      // Record 3 seconds of animation
+      // Record 10 seconds of animation
       recorder.start();
       const interval = setInterval(drawFrame, 1000 / 30);
       setTimeout(() => {
         clearInterval(interval);
         recorder.stop();
-      }, 3000);
+      }, 10000);
     })();
   </script>
 </body>

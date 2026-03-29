@@ -55,6 +55,24 @@ _(Leave this running to automatically rebuild the extension on changes)_
 4. Select the output directory (typically `extension/dist` or just the `extension` folder if it compiles in place) in this project.
 5. The extension should now be loaded into your browser and ready to connect to the local server.
 
+## Usage
+
+Once the server is running and the extension is loaded into Chrome, you can start watching videos with friends:
+
+1. **Host a Room**:
+   - Navigate to a webpage with an HTML5 video player (e.g., a standard web video).
+   - Click the "Watch Together" extension icon in your Chrome toolbar.
+   - Click **Create Room** (or similar button) to generate a new room code.
+   - Share the generated room code with your friends.
+
+2. **Join a Room**:
+   - Open a webpage with the _same_ video that the host is watching.
+   - Click the "Watch Together" extension icon in the toolbar.
+   - Enter the room code shared by the host and click **Join Room**.
+
+3. **Watch Synchronously**:
+   - As long as you remain in the room, whenever anyone plays, pauses, or seeks the video, it will automatically synchronize for all other viewers in the room!
+
 ## Scripts & Maintenance
 
 The root `package.json` contains several helper scripts.

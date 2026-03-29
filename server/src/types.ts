@@ -5,5 +5,6 @@ export interface Room {
   code: string;
   peers: Map<string, WebSocket>;
   createdAt: number;
-  videoState: VideoState;
+  lastActivity: number;
+  videoState: VideoState | null;
 }

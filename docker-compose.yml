@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  watchtogether:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+    restart: unless-stopped
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true

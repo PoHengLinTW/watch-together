@@ -147,6 +147,29 @@ describe('Extension Integration', () => {
   });
 
   // -------------------------------------------------------------------------
+  describe('background get-state', () => {
+    it('returns IN_ROOM with roomCode and peerCount after room creation', () => {
+      // Simulate server responding with room-created
+      wsFactory.instances[0].simulateMessage({ type: 'room-created', code: 'TEST01', peerId: 'p1' });
+
+      bgChrome.runtime.sendMessage.mockClear();
+
+      // Popup sends get-state (routed via tab chrome to background listeners)
+      const tabChrome = createTabChrome(99);
+      tabChrome.runtime.sendMessage({ type: 'get-state' });
+
+      expect(bgChrome.runtime.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'state-update',
+          state: 'IN_ROOM',
+          roomCode: 'TEST01',
+          peerCount: 1,
+        }),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
   describe('content script <-> background', () => {
     it('content script video play sends sync event with videoId to server', () => {
       const video = new MockVideoElement('vid1');

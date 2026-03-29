@@ -81,6 +81,7 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
       connectionManager.send({ type: 'join-room', code: (msg as Extract<PopupMessage, { type: 'join-room' }>).code });
     } else if (msg.type === 'leave-room') {
       connectionManager.send({ type: 'leave-room' });
+      connectionManager.clearRoom();
       sendToPopup({ type: 'state-update', state: 'CONNECTED', roomCode: null, peerCount: 0 });
     } else if (msg.type === 'get-state') {
       const connState = connectionManager.getState();
@@ -88,7 +89,12 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
         : connState === 'CONNECTED' ? 'CONNECTED'
         : connState === 'RECONNECTING' ? 'RECONNECTING'
         : 'DISCONNECTED';
-      sendToPopup({ type: 'state-update', state: popupState, roomCode: null, peerCount: 0 });
+      sendToPopup({
+        type: 'state-update',
+        state: popupState,
+        roomCode: connectionManager.getRoomCode(),
+        peerCount: connectionManager.getPeerCount(),
+      });
     }
   });
 

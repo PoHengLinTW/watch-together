@@ -31,6 +31,7 @@ export class ConnectionManager {
   private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
 
   private roomCode: string | null = null;
+  private peerCount = 0;
 
   constructor(options: ConnectionManagerOptions = {}) {
     this.wsFactory = options.wsFactory ?? ((url) => new WebSocket(url));
@@ -40,6 +41,14 @@ export class ConnectionManager {
 
   getState(): ConnectionState {
     return this.state;
+  }
+
+  getRoomCode(): string | null {
+    return this.roomCode;
+  }
+
+  getPeerCount(): number {
+    return this.peerCount;
   }
 
   setState(state: ConnectionState): void {
@@ -60,6 +69,8 @@ export class ConnectionManager {
     this.clearRetry();
     this.ws?.close();
     this.ws = null;
+    this.roomCode = null;
+    this.peerCount = 0;
     this.setState('DISCONNECTED');
   }
 
@@ -77,6 +88,10 @@ export class ConnectionManager {
 
   clearRoom(): void {
     this.roomCode = null;
+    this.peerCount = 0;
+    if (this.state === 'IN_ROOM') {
+      this.setState('CONNECTED');
+    }
   }
 
   private openSocket(): void {
@@ -104,8 +119,18 @@ export class ConnectionManager {
         return;
       }
 
-      if (msg.type === 'room-joined') {
+      if (msg.type === 'room-created') {
         this.roomCode = msg.code;
+        this.peerCount = 1;
+        this.setState('IN_ROOM');
+      } else if (msg.type === 'room-joined') {
+        this.roomCode = msg.code;
+        this.peerCount = 2;
+        this.setState('IN_ROOM');
+      } else if (msg.type === 'peer-joined') {
+        this.peerCount++;
+      } else if (msg.type === 'peer-left') {
+        this.peerCount = Math.max(0, this.peerCount - 1);
       }
 
       this.onMessage?.(msg);

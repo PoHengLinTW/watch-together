@@ -4,6 +4,8 @@ import type { WebSocket } from 'ws';
 import { randomUUID } from 'crypto';
 import { RoomManager } from './RoomManager.js';
 import { MessageHandler } from './MessageHandler.js';
+import { consoleLogger } from './Logger.js';
+import type { Logger } from './Logger.js';
 
 export interface ServerConfig {
   port: number;
@@ -11,6 +13,8 @@ export interface ServerConfig {
   heartbeatIntervalMs?: number;
   /** How long after a ping to wait for pong before disconnecting. Default: 10000ms */
   pongTimeoutMs?: number;
+  /** Logger instance. Defaults to console logger. */
+  logger?: Logger;
 }
 
 interface ClientInfo {
@@ -32,19 +36,23 @@ export interface ServerHandle {
 export function createServer(config: ServerConfig): ServerHandle {
   const heartbeatIntervalMs = config.heartbeatIntervalMs ?? 30_000;
   const pongTimeoutMs = config.pongTimeoutMs ?? 10_000;
+  const logger = config.logger ?? consoleLogger;
 
   const roomManager = new RoomManager();
-  const handler = new MessageHandler(roomManager);
+  const handler = new MessageHandler(roomManager, logger);
 
   const server = http.createServer();
   const wss = new WebSocketServer({ server });
 
   const connections = new Map<WebSocket, ClientInfo>();
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', (ws, req) => {
     const peerId = randomUUID();
     const info: ClientInfo = { peerId, isAlive: true, pongTimer: null };
     connections.set(ws, info);
+
+    const ip = req.socket.remoteAddress ?? 'unknown';
+    logger.info('Client connected', { peerId, ip });
 
     ws.on('message', (data) => {
       const clientInfo = connections.get(ws);
@@ -56,6 +64,7 @@ export function createServer(config: ServerConfig): ServerHandle {
       const clientInfo = connections.get(ws);
       if (clientInfo?.pongTimer) clearTimeout(clientInfo.pongTimer);
       connections.delete(ws);
+      logger.info('Client disconnected', { peerId });
       // Reuse MessageHandler's handleLeaveRoom logic via synthetic message
       handler.handleMessage(peerId, ws, JSON.stringify({ type: 'leave-room' }));
     });
@@ -70,6 +79,7 @@ export function createServer(config: ServerConfig): ServerHandle {
     for (const [ws, info] of connections) {
       if (!info.isAlive) {
         // Already missed a pong — terminate
+        logger.warn('Heartbeat timeout, terminating client', { peerId: info.peerId });
         ws.terminate();
         continue;
       }
@@ -80,6 +90,7 @@ export function createServer(config: ServerConfig): ServerHandle {
       // Set a pong timeout: if client doesn't respond within pongTimeoutMs, terminate
       info.pongTimer = setTimeout(() => {
         if (!info.isAlive) {
+          logger.warn('Pong timeout, terminating client', { peerId: info.peerId });
           ws.terminate();
         }
       }, pongTimeoutMs);

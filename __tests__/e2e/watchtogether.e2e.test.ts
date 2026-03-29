@@ -17,6 +17,7 @@ import puppeteer, { type Browser, type Page } from 'puppeteer';
 import { execSync } from 'child_process';
 import * as http from 'http';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer } from '../../server/src/index.js';
@@ -120,6 +121,8 @@ let browserA: Browser;
 let browserB: Browser;
 let extIdA: string;
 let extIdB: string;
+let userDataDirA: string;
+let userDataDirB: string;
 
 // Popup pages (opened per test, reused within test)
 let popupA: Page;
@@ -153,23 +156,29 @@ beforeAll(async () => {
   // 3. Start fixture file server
   fixtureServer = await serveFixtures();
 
-  // 4. Launch two browser instances with extension loaded
-  const launchOptions = {
-    headless: false,
-    args: [
-      `--disable-extensions-except=${EXTENSION_DIST}`,
-      `--load-extension=${EXTENSION_DIST}`,
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-    ],
-  };
+  // 4. Launch two browser instances with extension loaded in isolated profiles
+  userDataDirA = fs.mkdtempSync(path.join(os.tmpdir(), 'wt-e2e-a-'));
+  userDataDirB = fs.mkdtempSync(path.join(os.tmpdir(), 'wt-e2e-b-'));
+
+  const baseLaunchArgs = [
+    `--disable-extensions-except=${EXTENSION_DIST}`,
+    `--load-extension=${EXTENSION_DIST}`,
+    '--no-sandbox',
+    '--disable-setuid-sandbox',
+    '--disable-dev-shm-usage',
+  ];
 
   // Launch browsers sequentially to avoid Chrome startup race conditions
-  browserA = await puppeteer.launch(launchOptions);
+  browserA = await puppeteer.launch({
+    headless: false,
+    args: [...baseLaunchArgs, `--user-data-dir=${userDataDirA}`],
+  });
   extIdA = await getExtensionId(browserA);
 
-  browserB = await puppeteer.launch(launchOptions);
+  browserB = await puppeteer.launch({
+    headless: false,
+    args: [...baseLaunchArgs, `--user-data-dir=${userDataDirB}`],
+  });
   extIdB = await getExtensionId(browserB);
 }, 120000);
 
@@ -188,6 +197,10 @@ afterAll(async () => {
   ]);
   fixtureServer?.close();
   await syncServer?.close();
+
+  // Clean up temporary Chrome profile directories
+  if (userDataDirA) fs.rmSync(userDataDirA, { recursive: true, force: true });
+  if (userDataDirB) fs.rmSync(userDataDirB, { recursive: true, force: true });
 });
 
 // ---------------------------------------------------------------------------

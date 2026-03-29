@@ -225,6 +225,110 @@ describe('ConnectionManager', () => {
     });
   });
 
+  describe('room state tracking', () => {
+    it('getRoomCode() returns null initially', () => {
+      const { factory } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+      expect(manager.getRoomCode()).toBeNull();
+    });
+
+    it('getRoomCode() returns code after room-created message', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      instances[0].simulateMessage({ type: 'room-created', code: 'ABC123', peerId: 'p1' });
+      expect(manager.getRoomCode()).toBe('ABC123');
+    });
+
+    it('getRoomCode() returns code after room-joined message', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      instances[0].simulateMessage({ type: 'room-joined', code: 'XYZ789', peerId: 'p1', state: null });
+      expect(manager.getRoomCode()).toBe('XYZ789');
+    });
+
+    it('getState() transitions to IN_ROOM on room-created', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      instances[0].simulateMessage({ type: 'room-created', code: 'ABC123', peerId: 'p1' });
+      expect(manager.getState()).toBe('IN_ROOM');
+    });
+
+    it('getState() transitions to IN_ROOM on room-joined', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      instances[0].simulateMessage({ type: 'room-joined', code: 'XYZ789', peerId: 'p1', state: null });
+      expect(manager.getState()).toBe('IN_ROOM');
+    });
+
+    it('getPeerCount() returns 0 initially', () => {
+      const { factory } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+      expect(manager.getPeerCount()).toBe(0);
+    });
+
+    it('getPeerCount() is 1 after room-created', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      instances[0].simulateMessage({ type: 'room-created', code: 'ABC123', peerId: 'p1' });
+      expect(manager.getPeerCount()).toBe(1);
+    });
+
+    it('getPeerCount() is 2 after room-joined', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      instances[0].simulateMessage({ type: 'room-joined', code: 'XYZ789', peerId: 'p1', state: null });
+      expect(manager.getPeerCount()).toBe(2);
+    });
+
+    it('getPeerCount() increments on peer-joined', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      instances[0].simulateMessage({ type: 'room-created', code: 'ABC123', peerId: 'p1' });
+      expect(manager.getPeerCount()).toBe(1);
+      instances[0].simulateMessage({ type: 'peer-joined', peerId: 'p2' });
+      expect(manager.getPeerCount()).toBe(2);
+    });
+
+    it('getPeerCount() decrements on peer-left', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      instances[0].simulateMessage({ type: 'room-created', code: 'ABC123', peerId: 'p1' });
+      instances[0].simulateMessage({ type: 'peer-joined', peerId: 'p2' });
+      expect(manager.getPeerCount()).toBe(2);
+      instances[0].simulateMessage({ type: 'peer-left', peerId: 'p2' });
+      expect(manager.getPeerCount()).toBe(1);
+    });
+
+    it('clearRoom() resets roomCode, peerCount, and state to CONNECTED', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      instances[0].simulateMessage({ type: 'room-created', code: 'ABC123', peerId: 'p1' });
+      expect(manager.getState()).toBe('IN_ROOM');
+      manager.clearRoom();
+      expect(manager.getRoomCode()).toBeNull();
+      expect(manager.getPeerCount()).toBe(0);
+      expect(manager.getState()).toBe('CONNECTED');
+    });
+  });
+
   describe('reconnecting state', () => {
     it('should enter RECONNECTING state (not DISCONNECTED) on abnormal close when retries remain', () => {
       const { factory, instances } = createWsFactory();

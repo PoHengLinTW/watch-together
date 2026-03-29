@@ -1,6 +1,7 @@
 import type { WebSocket } from 'ws';
 import type { ClientMessage, ServerMessage, ErrorCode } from '@watchtogether/shared';
 import type { RoomManager } from './RoomManager.js';
+import type { Logger } from './Logger.js';
 import { applyEvent } from './VideoState.js';
 
 const MAX_MESSAGE_BYTES = 10 * 1024; // 10KB
@@ -16,7 +17,10 @@ const VALID_CLIENT_TYPES: Set<ClientMessage['type']> = new Set([
 export type ParseResult = ClientMessage | { error: ErrorCode; message: string };
 
 export class MessageHandler {
-  constructor(private readonly roomManager: RoomManager) {}
+  constructor(
+    private readonly roomManager: RoomManager,
+    private readonly logger?: Logger,
+  ) {}
 
   /**
    * Parse and validate a raw WebSocket message string.
@@ -91,6 +95,7 @@ export class MessageHandler {
       return;
     }
 
+    this.logger?.info('Room created', { code, peerId });
     this.send(ws, { type: 'room-created', code, peerId });
   }
 
@@ -102,6 +107,7 @@ export class MessageHandler {
       return;
     }
 
+    this.logger?.info('Peer joined room', { code: code.toUpperCase(), peerId });
     this.send(ws, { type: 'room-joined', code: code.toUpperCase(), peerId, state: joinResult.videoState });
 
     // Notify existing peers
@@ -119,6 +125,7 @@ export class MessageHandler {
     const leaveResult = this.roomManager.leaveRoom(peerId);
     if (!leaveResult) return;
 
+    this.logger?.info('Peer left room', { peerId: leaveResult.leavingPeerId });
     for (const [, remainingWs] of leaveResult.remainingPeers) {
       this.send(remainingWs, { type: 'peer-left', peerId: leaveResult.leavingPeerId });
     }
@@ -155,6 +162,7 @@ export class MessageHandler {
   }
 
   private sendError(ws: WebSocket, errorCode: ErrorCode, message: string): void {
+    this.logger?.warn('Error sent to client', { errorCode, message });
     this.send(ws, { type: 'error', message, errorCode });
   }
 }

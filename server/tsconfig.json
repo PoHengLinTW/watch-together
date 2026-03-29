@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "paths": {
+      "@watchtogether/shared": ["../shared/protocol.ts"]
+    }
+  },
+  "include": ["src/**/*.ts"]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "watchtogether",
+  "private": true,
+  "workspaces": [
+    "server",
+    "extension",
+    "shared"
+  ],
+  "scripts": {
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "tsc --noEmit --project server/tsconfig.json && tsc --noEmit --project extension/tsconfig.json"
+  }
+}

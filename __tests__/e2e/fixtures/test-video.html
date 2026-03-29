@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <title>WatchTogether Test Page</title>
+  <style>
+    .vjscontainer { max-width: 640px; margin: 20px auto; }
+    video { width: 100%; }
+  </style>
+</head>
+<body>
+  <div class="vjscontainer">
+    <video
+      id="vjs-testVid1"
+      data-vid="testVid1"
+      data-tserver="pt2"
+      class="video-js vjs-big-play-centered"
+      controls
+      preload="auto"
+    >
+      <source src="data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDE=" type="video/mp4">
+    </video>
+  </div>
+
+  <div class="vjscontainer">
+    <video
+      id="vjs-testVid2"
+      data-vid="testVid2"
+      data-tserver="pt2"
+      class="video-js vjs-big-play-centered"
+      controls
+      preload="auto"
+    >
+      <source src="data:video/mp4;base64,AAAAIGZ0eXBpc29tAAACAGlzb21pc28yYXZjMW1wNDE=" type="video/mp4">
+    </video>
+  </div>
+</body>
+</html>

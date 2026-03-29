@@ -33,6 +33,11 @@ export class MockVideoElement {
     this.listeners.get(event)?.delete(fn);
   }
 
+  /** Simulate a DOM event (e.g. 'seeked', 'ratechange') without changing state */
+  dispatchEvent(event: string): void {
+    this.emit(event);
+  }
+
   private emit(event: string): void {
     this.listeners.get(event)?.forEach((fn) => fn({ type: event }));
   }

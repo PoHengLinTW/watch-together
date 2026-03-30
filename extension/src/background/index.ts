@@ -100,6 +100,17 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
 
   connectionManager.connect(serverUrl);
 
+  // Keep the service worker alive so the WebSocket isn't dropped.
+  // Chrome MV3 kills service workers after 30s of inactivity;
+  // a periodic alarm wakes it before that threshold.
+  const KEEPALIVE_ALARM = 'watchtogether-keepalive';
+  chrome.alarms.create(KEEPALIVE_ALARM, { periodInMinutes: 25 / 60 });
+  chrome.alarms.onAlarm.addListener((alarm: chrome.alarms.Alarm) => {
+    if (alarm.name === KEEPALIVE_ALARM) {
+      // No-op — waking the service worker is the purpose
+    }
+  });
+
   return { connectionManager };
 }
 

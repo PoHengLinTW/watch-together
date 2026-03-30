@@ -19,6 +19,13 @@ export function createMockChrome() {
         set: vi.fn().mockResolvedValue(undefined),
       },
     },
+    alarms: {
+      create: vi.fn(),
+      clear: vi.fn(),
+      onAlarm: {
+        addListener: vi.fn(),
+      },
+    },
   };
 }
 

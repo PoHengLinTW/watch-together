@@ -40,6 +40,13 @@ function createIntegrationChrome() {
         for (const fn of listeners) fn(msg, {}, () => {});
       }),
     },
+    alarms: {
+      create: vi.fn(),
+      clear: vi.fn(),
+      onAlarm: {
+        addListener: vi.fn(),
+      },
+    },
   };
 
   function createTabChrome(tabId: number) {

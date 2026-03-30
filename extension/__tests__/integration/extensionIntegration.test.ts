@@ -78,14 +78,14 @@ function createIntegrationChrome() {
 function createMockDocument(videos: MockVideoElement[]) {
   return {
     querySelectorAll: (selector: string) => {
-      if (selector === 'div.vjscontainer video.video-js') {
+      if (selector === 'video[data-vid]' || selector === 'video.video-js' || selector === 'video.vjs-tech') {
         return videos as unknown as NodeListOf<Element>;
       }
       return [] as unknown as NodeListOf<Element>;
     },
     querySelector: (selector: string) => {
-      // Match: video.video-js[data-vid="X"]
-      const match = selector.match(/video\.video-js\[data-vid="([^"]+)"\]/);
+      // Match: video[data-vid="X"]
+      const match = selector.match(/video\[data-vid="([^"]+)"\]/);
       if (match) {
         return (videos.find((v) => v.dataset.vid === match[1]) ?? null) as unknown as Element | null;
       }

@@ -40,7 +40,12 @@ function setupDomMocks(videos: MockVideoElement[]) {
   });
 
   const mockDoc = {
-    querySelectorAll: vi.fn().mockReturnValue(videos as unknown as NodeListOf<Element>),
+    querySelectorAll: vi.fn().mockImplementation((selector: string) => {
+      if (selector === 'video[data-vid]' || selector === 'video.video-js' || selector === 'video.vjs-tech') {
+        return videos as unknown as NodeListOf<Element>;
+      }
+      return [] as unknown as NodeListOf<Element>;
+    }),
     querySelector: vi.fn((selector: string) => {
       const match = videos.find(v => selector.includes(v.dataset.vid));
       return match ?? null;
@@ -82,7 +87,7 @@ describe('VideoController', () => {
       const found = detector.scan();
 
       expect(found).toHaveLength(2);
-      expect(mockDoc.querySelectorAll).toHaveBeenCalledWith('div.vjscontainer video.video-js');
+      expect(mockDoc.querySelectorAll).toHaveBeenCalledWith('video[data-vid]');
     });
 
     it('should observe DOM for deferred Video.js initialization via MutationObserver', () => {

@@ -53,7 +53,7 @@ export class VideoController {
 
     this.logger?.log('content:apply-remote-event', event);
     const video = this.doc.querySelector(
-      `video.video-js[data-vid="${event.videoId}"]`
+      `video[data-vid="${event.videoId}"]`
     ) as HTMLVideoElement | null;
 
     if (!video) {

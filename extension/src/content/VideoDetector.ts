@@ -1,6 +1,10 @@
 import type { DebugLogger } from '../shared/debug';
 
-const VIDEO_SELECTOR = 'div.vjscontainer video.video-js';
+const VIDEO_SELECTORS = [
+  'video[data-vid]',
+  'video.video-js',
+  'video.vjs-tech',
+] as const;
 
 interface VideoDetectorOptions {
   document: Pick<Document, 'querySelectorAll' | 'body'>;
@@ -21,9 +25,21 @@ export class VideoDetector {
   }
 
   scan(): HTMLVideoElement[] {
-    this.logger?.log('detector:scan-start', { selector: VIDEO_SELECTOR });
-    const nodes = this.doc.querySelectorAll(VIDEO_SELECTOR);
-    const videos = Array.from(nodes) as HTMLVideoElement[];
+    this.logger?.log('detector:scan-start', { selectors: VIDEO_SELECTORS });
+    const seen = new Set<HTMLVideoElement>();
+    const videos: HTMLVideoElement[] = [];
+
+    for (const selector of VIDEO_SELECTORS) {
+      const nodes = this.doc.querySelectorAll(selector);
+      const matched = Array.from(nodes) as HTMLVideoElement[];
+      this.logger?.log('detector:scan-selector-result', { selector, count: matched.length });
+      for (const video of matched) {
+        if (seen.has(video)) continue;
+        seen.add(video);
+        videos.push(video);
+      }
+    }
+
     this.logger?.log('detector:scan-result', {
       count: videos.length,
       videoIds: videos.map((video) => (video as unknown as { dataset: Record<string, string> }).dataset.vid ?? null),

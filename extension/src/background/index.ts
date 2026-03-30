@@ -1,5 +1,6 @@
 import { ConnectionManager } from './ConnectionManager';
-import type { BackgroundMessage, ContentMessage, PopupMessage, BackgroundToPopupMessage } from '../shared/messages';
+import type { BackgroundMessage, ContentMessage, PopupMessage, BackgroundToPopupMessage, DebugLogMessage } from '../shared/messages';
+import { createConsoleDebugLogger } from '../shared/debug';
 
 declare const __SERVER_URL__: string;
 
@@ -11,6 +12,26 @@ interface BackgroundOptions {
 
 export function initBackground(options: BackgroundOptions): { connectionManager: ConnectionManager } {
   const { chrome, wsFactory, serverUrl } = options;
+  const logger = createConsoleDebugLogger('background');
+
+  function broadcastToTabs(msg: BackgroundMessage): void {
+    chrome.tabs.query({}, (tabs) => {
+      for (const tab of tabs) {
+        if (tab.id !== undefined) chrome.tabs.sendMessage(tab.id, msg)?.catch(() => {});
+      }
+    });
+  }
+
+  function log(event: string, payload?: unknown): void {
+    logger.log(event, payload);
+    const mirrored: DebugLogMessage = {
+      type: 'debug-log',
+      scope: 'background',
+      event,
+      payload,
+    };
+    broadcastToTabs(mirrored);
+  }
 
   /** Broadcast a message to all extension popups. */
   function sendToPopup(msg: BackgroundToPopupMessage): void {
@@ -21,18 +42,17 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
 
   const connectionManager = new ConnectionManager({
     wsFactory,
+    logger: { log },
     onMessage: (msg) => {
+      log('bg:server-message', msg);
       if (msg.type === 'sync-event') {
         const outgoing: BackgroundMessage = {
           type: 'sync-event',
           event: msg.event,
           fromPeer: msg.fromPeer,
         };
-        chrome.tabs.query({}, (tabs) => {
-          for (const tab of tabs) {
-            if (tab.id !== undefined) chrome.tabs.sendMessage(tab.id, outgoing)?.catch(() => {});
-          }
-        });
+        log('bg:forward-to-tabs', outgoing);
+        broadcastToTabs(outgoing);
       } else if (msg.type === 'room-created') {
         sendToPopup({
           type: 'state-update',
@@ -60,6 +80,7 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
       }
     },
     onStateChange: (state) => {
+      log('bg:state-change', { state });
       if (state === 'CONNECTED') {
         sendToPopup({ type: 'state-update', state: 'CONNECTED', roomCode: null, peerCount: 0 });
       } else if (state === 'DISCONNECTED') {
@@ -72,6 +93,7 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
 
   chrome.runtime.onMessage.addListener((message: unknown) => {
     const msg = message as ContentMessage | PopupMessage;
+    log('bg:runtime-message', msg);
     if (msg.type === 'sync-event') {
       connectionManager.send({ type: 'sync-event', event: (msg as ContentMessage).event });
     } else if (msg.type === 'create-room') {
@@ -97,6 +119,7 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
     }
   });
 
+  log('bg:init', { serverUrl });
   connectionManager.connect(serverUrl);
 
   // Keep the service worker alive so the WebSocket isn't dropped.
@@ -107,6 +130,7 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
   chrome.alarms.onAlarm.addListener((alarm: chrome.alarms.Alarm) => {
     if (alarm.name === KEEPALIVE_ALARM) {
       // No-op — waking the service worker is the purpose
+      log('bg:keepalive-alarm', { name: alarm.name });
     }
   });
 

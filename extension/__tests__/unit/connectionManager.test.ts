@@ -223,6 +223,35 @@ describe('ConnectionManager', () => {
       expect(instances[0].send).toHaveBeenCalledWith(JSON.stringify({ type: 'create-room' }));
     });
 
+    it('logs outbound and queued websocket messages', () => {
+      const { factory, instances } = createWsFactory();
+      const log = vi.fn();
+      const manager = new ConnectionManager({
+        wsFactory: factory as unknown as (url: string) => WebSocket,
+        logger: { log },
+      });
+
+      manager.connect(SERVER_URL);
+      manager.send({ type: 'create-room' });
+
+      expect(log).toHaveBeenCalledWith(
+        'ws:queue-send',
+        expect.objectContaining({
+          message: { type: 'create-room' },
+          state: 'CONNECTING',
+        }),
+      );
+
+      instances[0].simulateOpen();
+      expect(log).toHaveBeenCalledWith(
+        'ws:send',
+        expect.objectContaining({
+          message: { type: 'create-room' },
+          queued: true,
+        }),
+      );
+    });
+
     it('should throw if disconnected', () => {
       const { factory } = createWsFactory();
       const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
@@ -243,6 +272,22 @@ describe('ConnectionManager', () => {
 
       const sent = instances[0].send.mock.calls.map(([d]: [string]) => JSON.parse(d));
       expect(sent).toContainEqual({ type: 'pong' });
+    });
+
+    it('logs inbound websocket messages', () => {
+      const { factory, instances } = createWsFactory();
+      const log = vi.fn();
+      const manager = new ConnectionManager({
+        wsFactory: factory as unknown as (url: string) => WebSocket,
+        logger: { log },
+      });
+
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+      instances[0].simulateMessage({ type: 'ping' });
+
+      expect(log).toHaveBeenCalledWith('ws:recv', { type: 'ping' });
+      expect(log).toHaveBeenCalledWith('ws:ping', expect.any(Object));
     });
 
     it('should detect missed pings and trigger reconnect', () => {

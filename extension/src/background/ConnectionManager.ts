@@ -1,4 +1,5 @@
 import type { ClientMessage, ServerMessage } from '@watchtogether/shared';
+import type { DebugLogger } from '../shared/debug';
 
 export type ConnectionState = 'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'IN_ROOM' | 'RECONNECTING';
 
@@ -6,6 +7,7 @@ interface ConnectionManagerOptions {
   wsFactory?: (url: string) => WebSocket;
   onMessage?: (msg: ServerMessage) => void;
   onStateChange?: (state: ConnectionState) => void;
+  logger?: DebugLogger;
 }
 
 const MAX_RETRIES = 15;
@@ -20,6 +22,7 @@ export class ConnectionManager {
   private wsFactory: (url: string) => WebSocket;
   private onMessage: ((msg: ServerMessage) => void) | undefined;
   private onStateChange: ((state: ConnectionState) => void) | undefined;
+  private logger: DebugLogger | undefined;
 
   private state: ConnectionState = 'DISCONNECTED';
   private ws: WebSocket | null = null;
@@ -40,6 +43,7 @@ export class ConnectionManager {
     this.wsFactory = options.wsFactory ?? ((url) => new WebSocket(url));
     this.onMessage = options.onMessage;
     this.onStateChange = options.onStateChange;
+    this.logger = options.logger;
   }
 
   getState(): ConnectionState {
@@ -56,6 +60,12 @@ export class ConnectionManager {
 
   setState(state: ConnectionState): void {
     this.state = state;
+    this.logger?.log('connection:state', {
+      state,
+      roomCode: this.roomCode,
+      peerCount: this.peerCount,
+      retryCount: this.retryCount,
+    });
     this.onStateChange?.(state);
   }
 
@@ -64,6 +74,7 @@ export class ConnectionManager {
       throw new Error(`Cannot connect: already in state ${this.state}`);
     }
     this.url = url;
+    this.logger?.log('ws:connect', { url, state: this.state });
     this.openSocket();
   }
 
@@ -72,6 +83,7 @@ export class ConnectionManager {
     this.retryCount = 0;
     this.clearHeartbeat();
     this.clearRetry();
+    this.logger?.log('ws:disconnect', { roomCode: this.roomCode, peerCount: this.peerCount });
     this.ws?.close();
     this.ws = null;
     this.roomCode = null;
@@ -86,8 +98,14 @@ export class ConnectionManager {
     const serialized = JSON.stringify(message);
     if (this.state === 'CONNECTING' || this.state === 'RECONNECTING') {
       this.messageQueue.push(serialized);
+      this.logger?.log('ws:queue-send', {
+        message,
+        state: this.state,
+        queueLength: this.messageQueue.length,
+      });
       return;
     }
+    this.logger?.log('ws:send', { message, state: this.state });
     this.ws!.send(serialized);
   }
 
@@ -104,6 +122,7 @@ export class ConnectionManager {
     // synchronously during construction doesn't get swallowed by the guard.
     this.disconnecting = false;
     this.setState('CONNECTING');
+    this.logger?.log('ws:open-socket', { url: this.url });
     const ws = this.wsFactory(this.url);
     this.ws = ws;
 
@@ -112,20 +131,26 @@ export class ConnectionManager {
       // disconnecting=true, which would block the next handleDisconnect call.
       this.disconnecting = false;
       this.retryCount = 0;
+      this.logger?.log('ws:open', { url: this.url, queuedMessages: this.messageQueue.length });
       this.setState('CONNECTED');
       this.flushQueue();
       this.resetHeartbeat();
 
       if (this.roomCode !== null) {
-        this.ws!.send(JSON.stringify({ type: 'join-room', code: this.roomCode }));
+        const joinMessage: ClientMessage = { type: 'join-room', code: this.roomCode };
+        this.logger?.log('ws:rejoin-room', joinMessage);
+        this.ws!.send(JSON.stringify(joinMessage));
       }
     };
 
     ws.onmessage = (event: MessageEvent) => {
       const msg = JSON.parse(event.data as string) as ServerMessage;
+      this.logger?.log('ws:recv', msg);
 
       if (msg.type === 'ping') {
+        this.logger?.log('ws:ping', { roomCode: this.roomCode });
         this.ws?.send(JSON.stringify({ type: 'pong' }));
+        this.logger?.log('ws:send', { message: { type: 'pong' }, state: this.state });
         this.resetHeartbeat();
         return;
       }
@@ -148,6 +173,7 @@ export class ConnectionManager {
     };
 
     ws.onclose = (event: CloseEvent) => {
+      this.logger?.log('ws:close', { code: event.code, reason: event.reason, disconnecting: this.disconnecting });
       if (event.code === 1000) {
         // Normal close — don't reconnect
         this.setState('DISCONNECTED');
@@ -157,6 +183,7 @@ export class ConnectionManager {
     };
 
     ws.onerror = () => {
+      this.logger?.log('ws:error', { state: this.state, roomCode: this.roomCode });
       this.handleDisconnect();
     };
   }
@@ -171,12 +198,22 @@ export class ConnectionManager {
     if (this.retryCount < MAX_RETRIES) {
       const delay = backoffMs(this.retryCount);
       this.retryCount++;
+      this.logger?.log('ws:reconnect-scheduled', {
+        delay,
+        retryCount: this.retryCount,
+        mode: 'fast',
+      });
       this.retryTimer = setTimeout(() => {
         this.retryTimer = null;
         this.openSocket();
       }, delay);
     } else {
       // Fast retries exhausted — slow retry every 60s indefinitely
+      this.logger?.log('ws:reconnect-scheduled', {
+        delay: SLOW_RETRY_MS,
+        retryCount: this.retryCount,
+        mode: 'slow',
+      });
       this.retryTimer = setTimeout(() => {
         this.retryTimer = null;
         this.openSocket();
@@ -185,7 +222,9 @@ export class ConnectionManager {
   }
 
   private flushQueue(): void {
+    this.logger?.log('ws:flush-queue', { queueLength: this.messageQueue.length });
     for (const msg of this.messageQueue) {
+      this.logger?.log('ws:send', { message: JSON.parse(msg) as ClientMessage, state: this.state, queued: true });
       this.ws?.send(msg);
     }
     this.messageQueue = [];
@@ -193,8 +232,10 @@ export class ConnectionManager {
 
   private resetHeartbeat(): void {
     this.clearHeartbeat();
+    this.logger?.log('ws:heartbeat-reset', { timeoutMs: HEARTBEAT_TIMEOUT_MS });
     this.heartbeatTimer = setTimeout(() => {
       // No ping received in time — force reconnect
+      this.logger?.log('ws:heartbeat-timeout', { timeoutMs: HEARTBEAT_TIMEOUT_MS });
       this.ws?.close(4000, 'heartbeat timeout');
       this.ws = null;
       this.handleDisconnect();

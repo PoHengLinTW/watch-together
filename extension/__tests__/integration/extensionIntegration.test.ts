@@ -223,6 +223,33 @@ describe('Extension Integration', () => {
       expect(video.paused).toBe(false);
       expect(video.currentTime).toBeCloseTo(5, 0);
     });
+
+    it('mirrors background debug logs to the content script console', () => {
+      const video = new MockVideoElement('vid1');
+      const doc = createMockDocument([video]);
+      const { raf } = createRafMock();
+      const tabChrome = createTabChrome(1);
+      const debugSpy = vi.spyOn(console, 'debug').mockImplementation(() => {});
+
+      initContentScript({
+        chrome: tabChrome as unknown as typeof chrome,
+        document: doc as unknown as Document,
+        requestAnimationFrame: raf,
+      });
+
+      wsFactory.instances[0].simulateMessage({
+        type: 'sync-event',
+        event: { action: 'play', videoId: 'vid1', currentTime: 5, timestamp: Date.now() },
+        fromPeer: 'peer2',
+      });
+
+      expect(debugSpy).toHaveBeenCalledWith(
+        '[WatchTogether]',
+        'content',
+        'mirror:bg:server-message',
+        expect.objectContaining({ type: 'sync-event' }),
+      );
+    });
   });
 
   // -------------------------------------------------------------------------

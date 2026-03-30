@@ -4,7 +4,16 @@ import type { SyncEvent } from '@watchtogether/shared';
 export type ContentMessage = { type: 'sync-event'; event: SyncEvent };
 
 /** Sent from background service worker to content script via chrome.tabs.sendMessage */
-export type BackgroundMessage = { type: 'sync-event'; event: SyncEvent; fromPeer: string };
+export interface DebugLogMessage {
+  type: 'debug-log';
+  scope: 'background' | 'content';
+  event: string;
+  payload?: unknown;
+}
+
+export type BackgroundMessage =
+  | { type: 'sync-event'; event: SyncEvent; fromPeer: string }
+  | DebugLogMessage;
 
 /** Sent from popup to background service worker via chrome.runtime.sendMessage */
 export type PopupMessage =

@@ -108,10 +108,11 @@ export class MessageHandler {
     }
 
     this.logger?.info('Peer joined room', { code: code.toUpperCase(), peerId });
-    this.send(ws, { type: 'room-joined', code: code.toUpperCase(), peerId, state: joinResult.videoState });
+    const room = this.roomManager.getRoom(code);
+    const peerCount = room ? room.peers.size : 1;
+    this.send(ws, { type: 'room-joined', code: code.toUpperCase(), peerId, state: joinResult.videoState, peerCount });
 
     // Notify existing peers
-    const room = this.roomManager.getRoom(code);
     if (room) {
       for (const [existingPeerId, existingWs] of room.peers) {
         if (existingPeerId !== peerId) {

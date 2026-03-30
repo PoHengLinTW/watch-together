@@ -21,6 +21,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer } from '../../server/src/index.js';
+import type { WebSocketServer } from 'ws';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '../..');
@@ -115,6 +116,7 @@ async function waitForText(page: Page, selector: string, timeout = 10000): Promi
 // ---------------------------------------------------------------------------
 
 let syncServer: { close: () => Promise<void> };
+let syncWss: WebSocketServer;
 let syncPort: number;
 let fixtureServer: { port: number; close: () => void };
 let browserA: Browser;
@@ -141,10 +143,11 @@ let roomCode: string;
 
 beforeAll(async () => {
   // 1. Start sync server on random port
-  const { server, close } = createServer({ port: 0 });
+  const { server, wss, close } = createServer({ port: 0 });
   await new Promise<void>((resolve) => server.once('listening', resolve));
   const addr = server.address() as { port: number };
   syncPort = addr.port;
+  syncWss = wss;
   syncServer = { close };
 
   // 2. Build extension pointing at the test server
@@ -363,6 +366,69 @@ describe('E2E: WatchTogether', () => {
       (el) => (el as HTMLVideoElement).currentTime,
     );
     expect(Math.abs(timeB - targetTime)).toBeLessThanOrEqual(1);
+  });
+
+  it('Server force-drops all connections → both clients reconnect and rejoin → sync works', async () => {
+    // Force-terminate every WebSocket connection on the server side.
+    // Both extensions will detect the abnormal close and begin reconnecting.
+    for (const ws of syncWss.clients) {
+      ws.terminate();
+    }
+
+    // Wait for both popups to drop out of IN_ROOM state first (room-display hidden),
+    // confirming the disconnect was detected.
+    await waitFor(
+      async () => {
+        const [visA, visB] = await Promise.all([
+          popupA.$eval('#room-display', (el) => el.classList.contains('hidden')).catch(() => true),
+          popupB.$eval('#room-display', (el) => el.classList.contains('hidden')).catch(() => true),
+        ]);
+        return visA && visB;
+      },
+      15000, // should happen quickly once the WS closes
+    );
+
+    // Both popups should return to IN_ROOM state with 2 peers as both extensions
+    // reconnect and auto-rejoin the room.
+    await waitFor(
+      async () => {
+        const [visA, visB, cntA, cntB] = await Promise.all([
+          popupA.$eval('#room-display', (el) => !el.classList.contains('hidden')).catch(() => false),
+          popupB.$eval('#room-display', (el) => !el.classList.contains('hidden')).catch(() => false),
+          popupA.$eval('#peer-count', (el) => el.textContent?.trim()).catch(() => ''),
+          popupB.$eval('#peer-count', (el) => el.textContent?.trim()).catch(() => ''),
+        ]);
+        return visA && visB && cntA === '2' && cntB === '2';
+      },
+      30000, // allow up to 30s: 1s reconnect backoff + rejoin round-trip + UI update
+    );
+
+    const [cntA, cntB] = await Promise.all([
+      popupA.$eval('#peer-count', (el) => el.textContent?.trim()),
+      popupB.$eval('#peer-count', (el) => el.textContent?.trim()),
+    ]);
+    expect(cntA).toBe('2');
+    expect(cntB).toBe('2');
+
+    // Verify sync still works after reconnection: User A plays → User B plays
+    await videoPageA.evaluate(() => {
+      const video = document.querySelector('video.video-js') as HTMLVideoElement;
+      video.play().catch(() => {});
+    });
+
+    await waitFor(async () => {
+      const paused = await videoPageB.$eval(
+        'video.video-js',
+        (el) => (el as HTMLVideoElement).paused,
+      );
+      return !paused;
+    }, 20000);
+
+    const pausedB = await videoPageB.$eval(
+      'video.video-js',
+      (el) => (el as HTMLVideoElement).paused,
+    );
+    expect(pausedB).toBe(false);
   });
 
   it('User B closes browser → User A popup shows 1 peer', async () => {

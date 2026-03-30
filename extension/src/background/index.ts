@@ -41,12 +41,11 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
           peerCount: 1,
         });
       } else if (msg.type === 'room-joined') {
-        // We joined an existing room, so there's already at least one other peer
         sendToPopup({
           type: 'state-update',
           state: 'IN_ROOM',
           roomCode: msg.code,
-          peerCount: 2,
+          peerCount: msg.peerCount,
         });
       } else if (msg.type === 'peer-joined') {
         sendToPopup({ type: 'peer-joined' });

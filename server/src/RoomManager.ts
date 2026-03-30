@@ -87,15 +87,14 @@ export class RoomManager {
     room.peers.delete(peerId);
     this.peerToRoom.delete(peerId);
 
-    const destroyed = room.peers.size === 0;
-    if (destroyed) {
-      this.rooms.delete(code);
-    }
+    // Keep empty rooms alive so reconnecting peers can rejoin within the
+    // sweep expiry window. sweepExpiredRooms() handles eventual cleanup.
+    room.lastActivity = Date.now();
 
     return {
       leavingPeerId: peerId,
       remainingPeers: new Map(room.peers),
-      destroyed,
+      destroyed: false,
     };
   }
 

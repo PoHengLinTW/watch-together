@@ -104,18 +104,26 @@ describe('RoomManager', () => {
       manager.joinRoom(code, 'peer1', createMockWebSocket());
       manager.leaveRoom('peer1');
       const room = manager.getRoom(code);
-      // room may be destroyed if peer1 was the only peer
-      if (room) {
-        expect(room.peers.has('peer1')).toBe(false);
-      } else {
-        expect(room).toBeUndefined();
-      }
+      // Room stays alive after last peer leaves (for reconnection grace period)
+      expect(room).toBeDefined();
+      expect(room!.peers.has('peer1')).toBe(false);
     });
 
-    it('should destroy room when last peer leaves', () => {
+    it('should keep empty room alive after last peer leaves (for reconnection)', () => {
       const code = manager.createRoom();
       manager.joinRoom(code, 'peer1', createMockWebSocket());
       manager.leaveRoom('peer1');
+      // Room stays alive so reconnecting peers can rejoin within the expiry window.
+      expect(manager.getRoom(code)).toBeDefined();
+      expect(manager.getRoom(code)!.peers.size).toBe(0);
+    });
+
+    it('should clean up empty room after expiry via sweepExpiredRooms', () => {
+      const code = manager.createRoom();
+      manager.joinRoom(code, 'peer1', createMockWebSocket());
+      manager.leaveRoom('peer1');
+      vi.advanceTimersByTime(61 * 60 * 1000);
+      manager.sweepExpiredRooms();
       expect(manager.getRoom(code)).toBeUndefined();
     });
 

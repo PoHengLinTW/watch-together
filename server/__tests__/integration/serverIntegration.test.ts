@@ -112,7 +112,7 @@ describe('Server Integration', () => {
       ).rejects.toThrow('timed out');
     });
 
-    it('client A leaves after B left, room is destroyed', async () => {
+    it('client A leaves after B left, room stays alive for reconnection', async () => {
       const { ws: wsA, code } = await createRoom();
       const { ws: wsB } = await joinRoom(code);
       await waitForMessage(wsA, (m) => m.type === 'peer-joined');
@@ -122,11 +122,12 @@ describe('Server Integration', () => {
 
       sendMessage(wsA, { type: 'leave-room' });
 
-      // New client should not find the room
+      // Room stays alive so reconnecting peers can rejoin within the expiry window.
+      // A new client can join the now-empty room.
       const wsC = await connect();
       sendMessage(wsC, { type: 'join-room', code });
-      const err = await waitForMessage(wsC, (m) => m.type === 'error') as Extract<ServerMessage, { type: 'error' }>;
-      expect(err.errorCode).toBe('ROOM_NOT_FOUND');
+      const joined = await waitForMessage(wsC, (m) => m.type === 'room-joined') as Extract<ServerMessage, { type: 'room-joined' }>;
+      expect(joined.code).toBe(code);
     });
   });
 

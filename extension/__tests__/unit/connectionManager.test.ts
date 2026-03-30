@@ -179,7 +179,7 @@ describe('ConnectionManager', () => {
 
       // Join a room
       manager.send({ type: 'join-room', code: 'ABC123' });
-      instances[0].simulateMessage({ type: 'room-joined', code: 'ABC123', peerId: 'p1', state: null });
+      instances[0].simulateMessage({ type: 'room-joined', code: 'ABC123', peerId: 'p1', state: null, peerCount: 2 });
       manager.setState('IN_ROOM');
 
       // Simulate connection drop and reconnect
@@ -282,7 +282,7 @@ describe('ConnectionManager', () => {
       const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
       manager.connect(SERVER_URL);
       instances[0].simulateOpen();
-      instances[0].simulateMessage({ type: 'room-joined', code: 'XYZ789', peerId: 'p1', state: null });
+      instances[0].simulateMessage({ type: 'room-joined', code: 'XYZ789', peerId: 'p1', state: null, peerCount: 2 });
       expect(manager.getRoomCode()).toBe('XYZ789');
     });
 
@@ -300,7 +300,7 @@ describe('ConnectionManager', () => {
       const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
       manager.connect(SERVER_URL);
       instances[0].simulateOpen();
-      instances[0].simulateMessage({ type: 'room-joined', code: 'XYZ789', peerId: 'p1', state: null });
+      instances[0].simulateMessage({ type: 'room-joined', code: 'XYZ789', peerId: 'p1', state: null, peerCount: 2 });
       expect(manager.getState()).toBe('IN_ROOM');
     });
 
@@ -319,13 +319,19 @@ describe('ConnectionManager', () => {
       expect(manager.getPeerCount()).toBe(1);
     });
 
-    it('getPeerCount() is 2 after room-joined', () => {
+    it('getPeerCount() reflects peerCount from room-joined message', () => {
       const { factory, instances } = createWsFactory();
       const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
       manager.connect(SERVER_URL);
       instances[0].simulateOpen();
-      instances[0].simulateMessage({ type: 'room-joined', code: 'XYZ789', peerId: 'p1', state: null });
+      // When joining a room with 2 peers (normal flow), peerCount = 2
+      instances[0].simulateMessage({ type: 'room-joined', code: 'XYZ789', peerId: 'p1', state: null, peerCount: 2 });
       expect(manager.getPeerCount()).toBe(2);
+      // When joining a room with 1 peer (reconnection after empty room), peerCount = 1
+      manager.clearRoom();
+      manager.setState('CONNECTED');
+      instances[0].simulateMessage({ type: 'room-joined', code: 'XYZ789', peerId: 'p1', state: null, peerCount: 1 });
+      expect(manager.getPeerCount()).toBe(1);
     });
 
     it('getPeerCount() increments on peer-joined', () => {
@@ -467,7 +473,7 @@ describe('ConnectionManager', () => {
       manager.connect(SERVER_URL);
       instances[0].simulateOpen();
       manager.send({ type: 'join-room', code: 'ABC123' });
-      instances[0].simulateMessage({ type: 'room-joined', code: 'ABC123', peerId: 'p1', state: null });
+      instances[0].simulateMessage({ type: 'room-joined', code: 'ABC123', peerId: 'p1', state: null, peerCount: 2 });
       manager.setState('IN_ROOM');
 
       // Clear the room before disconnect

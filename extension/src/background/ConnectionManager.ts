@@ -130,7 +130,7 @@ export class ConnectionManager {
         this.setState('IN_ROOM');
       } else if (msg.type === 'room-joined') {
         this.roomCode = msg.code;
-        this.peerCount = 2;
+        this.peerCount = msg.peerCount;
         this.setState('IN_ROOM');
       } else if (msg.type === 'peer-joined') {
         this.peerCount++;

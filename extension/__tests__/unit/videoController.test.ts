@@ -62,6 +62,17 @@ function makeSyncCapture() {
   return { events, onSyncEvent: (e: SyncEvent) => events.push(e) };
 }
 
+function remoteEvent(overrides: Record<string, unknown> = {}): SyncEvent {
+  return {
+    action: 'play',
+    currentTime: 0,
+    timestamp: Date.now(),
+    videoId: 'vid1',
+    eventId: 'remote-evt-1',
+    ...overrides,
+  } as SyncEvent;
+}
+
 describe('VideoController', () => {
   let rafCallback: FrameRequestCallback | null = null;
   const mockRaf = vi.fn((cb: FrameRequestCallback) => {
@@ -391,6 +402,20 @@ describe('VideoController', () => {
       expect(evt!.timestamp).toBeLessThanOrEqual(after);
     });
 
+    it('should include eventId in every event', () => {
+      const v1 = new MockVideoElement('vid1');
+      const mockDoc = setupDomMocks([v1]);
+      const { events, onSyncEvent } = makeSyncCapture();
+
+      const controller = new VideoController({ onSyncEvent, document: mockDoc as unknown as Document, requestAnimationFrame: mockRaf });
+      controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
+
+      v1.play();
+
+      const evt = events.find(e => e.action === 'play');
+      expect(evt?.eventId).toMatch(/\S+/);
+    });
+
     it('should debounce seek events (300ms)', () => {
       vi.useFakeTimers();
       const v1 = new MockVideoElement('vid1');
@@ -425,7 +450,7 @@ describe('VideoController', () => {
   });
 
   describe('anti-echo', () => {
-    it('should suppress local events while applying remote event', () => {
+    it('should suppress the synthetic play event while applying a remote play', () => {
       const v1 = new MockVideoElement('vid1');
       const mockDoc = setupDomMocks([v1]);
       const { events, onSyncEvent } = makeSyncCapture();
@@ -436,15 +461,12 @@ describe('VideoController', () => {
       v1.play(); // activate, this emits a play event
       const beforeApply = events.length;
 
-      // Apply a remote event — the resulting native play() call should NOT emit
-      controller.applyRemoteEvent({ action: 'play', currentTime: 10, timestamp: Date.now(), videoId: 'vid1' });
+      controller.applyRemoteEvent(remoteEvent({ action: 'play', currentTime: 10 }), 1);
 
-      // rafCallback hasn't fired yet, so suppression is still active
-      // The play() inside applyRemoteEvent triggers an internal play event — should be suppressed
       expect(events.length).toBe(beforeApply);
     });
 
-    it('should re-enable local events after remote apply completes', () => {
+    it('should suppress delayed seeked caused by a remote play', () => {
       const v1 = new MockVideoElement('vid1');
       const mockDoc = setupDomMocks([v1]);
       const { events, onSyncEvent } = makeSyncCapture();
@@ -452,21 +474,34 @@ describe('VideoController', () => {
       const controller = new VideoController({ onSyncEvent, document: mockDoc as unknown as Document, requestAnimationFrame: mockRaf });
       controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
 
-      v1.play(); // activate
+      v1.play();
+      const beforeApply = events.length;
 
-      controller.applyRemoteEvent({ action: 'pause', currentTime: 5, timestamp: Date.now(), videoId: 'vid1' });
+      controller.applyRemoteEvent(remoteEvent({ action: 'play', currentTime: 12 }), 1);
+      v1.dispatchEvent('seeked');
 
-      // Fire the RAF callback — suppression should be lifted
-      expect(rafCallback).not.toBeNull();
-      rafCallback!(0);
+      expect(events.length).toBe(beforeApply);
+    });
 
-      // Now local events should emit again
+    it('should allow genuine user interaction after a remote apply', () => {
+      const v1 = new MockVideoElement('vid1');
+      const mockDoc = setupDomMocks([v1]);
+      const { events, onSyncEvent } = makeSyncCapture();
+
+      const controller = new VideoController({ onSyncEvent, document: mockDoc as unknown as Document, requestAnimationFrame: mockRaf });
+      controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
+
+      v1.play();
+
+      controller.applyRemoteEvent(remoteEvent({ action: 'pause', currentTime: 5 }), 1);
+
       const before = events.length;
       v1.play();
       expect(events.length).toBeGreaterThan(before);
     });
 
-    it('should not suppress events from genuine user interaction after remote apply', () => {
+    it('should emit a local seek when the user moves away from the remote target', () => {
+      vi.useFakeTimers();
       const v1 = new MockVideoElement('vid1');
       const mockDoc = setupDomMocks([v1]);
       const { events, onSyncEvent } = makeSyncCapture();
@@ -474,15 +509,18 @@ describe('VideoController', () => {
       const controller = new VideoController({ onSyncEvent, document: mockDoc as unknown as Document, requestAnimationFrame: mockRaf });
       controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
 
-      v1.play(); // activate
+      v1.play();
+      controller.applyRemoteEvent(remoteEvent({ action: 'seek', currentTime: 10 }), 1);
 
-      // Apply and then fire RAF to lift suppression
-      controller.applyRemoteEvent({ action: 'pause', currentTime: 0, timestamp: Date.now(), videoId: 'vid1' });
-      rafCallback!(0);
+      v1.currentTime = 30;
+      v1.dispatchEvent('seeked');
+      vi.advanceTimersByTime(300);
 
-      const beforeUser = events.length;
-      v1.play(); // genuine user action
-      expect(events.length).toBe(beforeUser + 1);
+      const seekEvent = events.findLast((event) => event.action === 'seek');
+      expect(seekEvent?.action).toBe('seek');
+      if (seekEvent && seekEvent.action === 'seek') {
+        expect(seekEvent.currentTime).toBe(30);
+      }
     });
 
     it('should only suppress events on the specific video being remotely controlled', () => {
@@ -496,19 +534,11 @@ describe('VideoController', () => {
 
       v2.play(); // make v2 active
 
-      const beforeApply = events.length;
+      controller.applyRemoteEvent(remoteEvent({ action: 'pause', currentTime: 0 }), 1);
 
-      // Apply remote event on v1 — should suppress v1, but v2 is active and events come from it
-      controller.applyRemoteEvent({ action: 'pause', currentTime: 0, timestamp: Date.now(), videoId: 'vid1' });
-
-      // v2 (active) emitting events should still work
       const before = events.length;
       v2.pause();
-      // v2 is still active, suppression only for v1 context (rafCallback not fired yet for v1)
-      // The test verifies active-video events are not suppressed when a different video gets remote event
-      // Note: current implementation uses a single suppressEvents flag so this may pass or fail
-      // depending on implementation; tests drive the design
-      expect(events.length).toBeGreaterThanOrEqual(before);
+      expect(events.length).toBe(before + 1);
     });
   });
 
@@ -528,7 +558,7 @@ describe('VideoController', () => {
       controller.attachVideos([v1, v2] as unknown as HTMLVideoElement[]);
 
       const pauseSpy = vi.spyOn(v2, 'pause');
-      controller.applyRemoteEvent({ action: 'pause', currentTime: 5, timestamp: Date.now(), videoId: 'vid2' });
+      controller.applyRemoteEvent(remoteEvent({ action: 'pause', currentTime: 5, videoId: 'vid2' }), 1);
 
       expect(pauseSpy).toHaveBeenCalled();
     });
@@ -543,7 +573,7 @@ describe('VideoController', () => {
       controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
 
       const playSpy = vi.spyOn(v1, 'play');
-      controller.applyRemoteEvent({ action: 'play', currentTime: 0, timestamp: Date.now(), videoId: 'vid1' });
+      controller.applyRemoteEvent(remoteEvent({ action: 'play', currentTime: 0, videoId: 'vid1' }), 1);
 
       expect(playSpy).toHaveBeenCalled();
     });
@@ -558,7 +588,7 @@ describe('VideoController', () => {
       controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
 
       const pauseSpy = vi.spyOn(v1, 'pause');
-      controller.applyRemoteEvent({ action: 'pause', currentTime: 5, timestamp: Date.now(), videoId: 'vid1' });
+      controller.applyRemoteEvent(remoteEvent({ action: 'pause', currentTime: 5, videoId: 'vid1' }), 1);
 
       expect(pauseSpy).toHaveBeenCalled();
     });
@@ -572,7 +602,7 @@ describe('VideoController', () => {
       const controller = new VideoController({ onSyncEvent, document: mockDoc as unknown as Document, requestAnimationFrame: mockRaf });
       controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
 
-      controller.applyRemoteEvent({ action: 'seek', currentTime: 77, timestamp: Date.now(), videoId: 'vid1' });
+      controller.applyRemoteEvent(remoteEvent({ action: 'seek', currentTime: 77, videoId: 'vid1' }), 1);
 
       expect(v1.currentTime).toBe(77);
     });
@@ -586,7 +616,7 @@ describe('VideoController', () => {
       const controller = new VideoController({ onSyncEvent, document: mockDoc as unknown as Document, requestAnimationFrame: mockRaf });
       controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
 
-      controller.applyRemoteEvent({ action: 'playbackRate', rate: 1.5, timestamp: Date.now(), videoId: 'vid1' });
+      controller.applyRemoteEvent(remoteEvent({ action: 'playbackRate', rate: 1.5, videoId: 'vid1' }), 1);
 
       expect(v1.playbackRate).toBe(1.5);
     });
@@ -605,7 +635,7 @@ describe('VideoController', () => {
       controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
 
       const sentTimestamp = now - 500; // 500ms ago
-      controller.applyRemoteEvent({ action: 'play', currentTime: 10, timestamp: sentTimestamp, videoId: 'vid1' });
+      controller.applyRemoteEvent(remoteEvent({ action: 'play', currentTime: 10, timestamp: sentTimestamp, videoId: 'vid1' }), 1);
 
       // Should compensate: currentTime = 10 + 0.5 = 10.5
       expect(v1.currentTime).toBeCloseTo(10.5, 1);
@@ -621,7 +651,7 @@ describe('VideoController', () => {
       controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
 
       const playSpy = vi.spyOn(v1, 'play');
-      controller.applyRemoteEvent({ action: 'play', currentTime: 0, timestamp: Date.now(), videoId: 'unknown' });
+      controller.applyRemoteEvent(remoteEvent({ action: 'play', currentTime: 0, videoId: 'unknown' }), 1);
 
       expect(playSpy).not.toHaveBeenCalled();
     });
@@ -639,9 +669,25 @@ describe('VideoController', () => {
       const controller = new VideoController({ onSyncEvent, document: mockDoc as unknown as Document, requestAnimationFrame: mockRaf });
       controller.attachVideos([v1, v2] as unknown as HTMLVideoElement[]);
 
-      controller.applyRemoteEvent({ action: 'play', currentTime: 0, timestamp: Date.now(), videoId: 'vid2' });
+      controller.applyRemoteEvent(remoteEvent({ action: 'play', currentTime: 0, videoId: 'vid2' }), 1);
 
       expect(controller.getActiveVideoId()).toBe('vid2');
+    });
+
+    it('should ignore stale remote events with lower sequence', () => {
+      const v1 = new MockVideoElement('vid1');
+      const mockDoc = setupDomMocks([v1]);
+      mockDoc.querySelector = vi.fn(() => v1 as unknown as Element);
+
+      const { onSyncEvent } = makeSyncCapture();
+      const controller = new VideoController({ onSyncEvent, document: mockDoc as unknown as Document, requestAnimationFrame: mockRaf });
+      controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
+
+      controller.applyRemoteEvent(remoteEvent({ action: 'play', currentTime: 7 }), 2);
+      controller.applyRemoteEvent(remoteEvent({ action: 'pause', currentTime: 1, eventId: 'remote-evt-older' }), 1);
+
+      expect(v1.paused).toBe(false);
+      expect(v1.currentTime).toBeCloseTo(7, 0);
     });
   });
 
@@ -662,8 +708,8 @@ describe('VideoController', () => {
       });
       controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
 
-      const event = { action: 'play' as const, currentTime: 0, timestamp: Date.now(), videoId: 'vid1' };
-      controller.applyRemoteEvent(event);
+      const event = remoteEvent({ action: 'play' as const, currentTime: 0, videoId: 'vid1' });
+      controller.applyRemoteEvent(event, 1);
 
       // Wait for the rejected promise to propagate
       await new Promise(resolve => setTimeout(resolve, 0));
@@ -686,7 +732,7 @@ describe('VideoController', () => {
       });
       controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
 
-      controller.applyRemoteEvent({ action: 'play', currentTime: 0, timestamp: Date.now(), videoId: 'vid1' });
+      controller.applyRemoteEvent(remoteEvent({ action: 'play', currentTime: 0, videoId: 'vid1' }), 1);
 
       await new Promise(resolve => setTimeout(resolve, 0));
 
@@ -709,7 +755,7 @@ describe('VideoController', () => {
       });
       controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
 
-      controller.applyRemoteEvent({ action: 'play', currentTime: 0, timestamp: Date.now(), videoId: 'vid1' });
+      controller.applyRemoteEvent(remoteEvent({ action: 'play', currentTime: 0, videoId: 'vid1' }), 1);
 
       await new Promise(resolve => setTimeout(resolve, 0));
 

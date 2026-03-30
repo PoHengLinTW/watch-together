@@ -1,6 +1,7 @@
 import { createServer } from '../../src/index.js';
 import WebSocket from 'ws';
 import type { ClientMessage, ServerMessage } from '@watchtogether/shared';
+import type { RoomManager } from '../../src/RoomManager.js';
 
 export interface TestServerOptions {
   heartbeatIntervalMs?: number;
@@ -9,23 +10,30 @@ export interface TestServerOptions {
 
 export interface TestServer {
   port: number;
+  roomManager: RoomManager;
   close: () => Promise<void>;
 }
 
 /** Start a test server on a random port. Returns port and cleanup function. */
 export async function startTestServer(opts: TestServerOptions = {}): Promise<TestServer> {
-  const { server, close } = createServer({
+  const { server, roomManager, close } = createServer({
     port: 0,
     heartbeatIntervalMs: opts.heartbeatIntervalMs,
     pongTimeoutMs: opts.pongTimeoutMs,
   });
 
-  await new Promise<void>((resolve) => server.once('listening', resolve));
+  await new Promise<void>((resolve) => {
+    if (server.listening) {
+      resolve();
+      return;
+    }
+    server.once('listening', resolve);
+  });
 
   const addr = server.address();
   const port = typeof addr === 'object' && addr !== null ? addr.port : 0;
 
-  return { port, close };
+  return { port, roomManager, close };
 }
 
 /** Connect a WebSocket client to the test server. */

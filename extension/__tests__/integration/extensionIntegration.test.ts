@@ -4,6 +4,17 @@ import { createWsFactory } from '../../../test/mocks/mockWebSocket.browser';
 import { initBackground } from '../../src/background/index';
 import { initContentScript } from '../../src/content/index';
 
+function remoteEvent(overrides: Record<string, unknown> = {}) {
+  return {
+    action: 'play' as const,
+    videoId: 'vid1',
+    currentTime: 0,
+    timestamp: Date.now(),
+    eventId: 'remote-evt-1',
+    ...overrides,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Functional Chrome messaging mock
 // Routes messages synchronously between background and per-tab listeners.
@@ -214,8 +225,9 @@ describe('Extension Integration', () => {
 
       wsFactory.instances[0].simulateMessage({
         type: 'sync-event',
-        event: { action: 'play', videoId: 'vid1', currentTime: 5, timestamp: Date.now() },
+        event: remoteEvent({ action: 'play', videoId: 'vid1', currentTime: 5 }),
         fromPeer: 'peer2',
+        sequence: 1,
       });
 
       flush();
@@ -239,8 +251,9 @@ describe('Extension Integration', () => {
 
       wsFactory.instances[0].simulateMessage({
         type: 'sync-event',
-        event: { action: 'play', videoId: 'vid1', currentTime: 5, timestamp: Date.now() },
+        event: remoteEvent({ action: 'play', videoId: 'vid1', currentTime: 5 }),
         fromPeer: 'peer2',
+        sequence: 1,
       });
 
       expect(debugSpy).toHaveBeenCalledWith(
@@ -276,13 +289,16 @@ describe('Extension Integration', () => {
       });
 
       // Mock server: echo sync-events back to all peers
+      let sequence = 0;
       wsFactory.instances[0].send.mockImplementation((data: string) => {
         const msg = JSON.parse(data);
         if (msg.type === 'sync-event') {
+          sequence += 1;
           wsFactory.instances[0].simulateMessage({
             type: 'sync-event',
             event: msg.event,
             fromPeer: 'peer-other',
+            sequence,
           });
         }
       });
@@ -373,8 +389,9 @@ describe('Extension Integration', () => {
 
       wsFactory.instances[0].simulateMessage({
         type: 'sync-event',
-        event: { action: 'play', videoId: 'vid2', currentTime: 0, timestamp: Date.now() },
+        event: remoteEvent({ action: 'play', videoId: 'vid2', currentTime: 0 }),
         fromPeer: 'peer-other',
+        sequence: 1,
       });
       flush();
 
@@ -398,8 +415,9 @@ describe('Extension Integration', () => {
       expect(() => {
         wsFactory.instances[0].simulateMessage({
           type: 'sync-event',
-          event: { action: 'play', videoId: 'unknown-id', currentTime: 0, timestamp: Date.now() },
+          event: remoteEvent({ action: 'play', videoId: 'unknown-id', currentTime: 0 }),
           fromPeer: 'peer-other',
+          sequence: 1,
         });
       }).not.toThrow();
 

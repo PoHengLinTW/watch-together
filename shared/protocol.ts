@@ -1,11 +1,11 @@
 // === Sync Events ===
 
 export type SyncEvent =
-  | { action: 'play'; currentTime: number; timestamp: number; videoId: string }
-  | { action: 'pause'; currentTime: number; timestamp: number; videoId: string }
-  | { action: 'seek'; currentTime: number; timestamp: number; videoId: string }
-  | { action: 'playbackRate'; rate: number; timestamp: number; videoId: string }
-  | { action: 'url-change'; url: string; timestamp: number };
+  | { action: 'play'; currentTime: number; timestamp: number; videoId: string; eventId: string }
+  | { action: 'pause'; currentTime: number; timestamp: number; videoId: string; eventId: string }
+  | { action: 'seek'; currentTime: number; timestamp: number; videoId: string; eventId: string }
+  | { action: 'playbackRate'; rate: number; timestamp: number; videoId: string; eventId: string }
+  | { action: 'url-change'; url: string; timestamp: number; eventId: string };
 
 // === Video State ===
 
@@ -44,6 +44,6 @@ export type ServerMessage =
   | { type: 'room-joined'; code: string; peerId: string; state: VideoState | null; peerCount: number }
   | { type: 'peer-joined'; peerId: string }
   | { type: 'peer-left'; peerId: string }
-  | { type: 'sync-event'; event: SyncEvent; fromPeer: string }
+  | { type: 'sync-event'; event: SyncEvent; fromPeer: string; sequence: number }
   | { type: 'error'; message: string; errorCode: ErrorCode }
   | { type: 'ping' };

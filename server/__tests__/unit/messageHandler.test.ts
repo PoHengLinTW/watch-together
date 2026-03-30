@@ -3,6 +3,17 @@ import { MessageHandler } from '../../src/MessageHandler.js';
 import { RoomManager } from '../../src/RoomManager.js';
 import { createMockWebSocket, getSentMessages } from '../helpers/mockWebSocket.js';
 
+function syncEvent(overrides: Record<string, unknown> = {}) {
+  return {
+    action: 'play' as const,
+    currentTime: 10,
+    timestamp: 1000,
+    videoId: 'v1',
+    eventId: 'evt-1',
+    ...overrides,
+  };
+}
+
 describe('MessageHandler', () => {
   let roomManager: RoomManager;
   let handler: MessageHandler;
@@ -56,7 +67,7 @@ describe('MessageHandler', () => {
     it('should relay sync event to all other peers in room', () => {
       handler.handleMessage('peerA', wsA, JSON.stringify({
         type: 'sync-event',
-        event: { action: 'play', currentTime: 10, timestamp: 1000, videoId: 'v1' },
+        event: syncEvent(),
       }));
       const messagesB = getSentMessages(wsB);
       expect(messagesB.some((m: unknown) => (m as Record<string, unknown>).type === 'sync-event')).toBe(true);
@@ -65,7 +76,7 @@ describe('MessageHandler', () => {
     it('should NOT echo sync event back to sender', () => {
       handler.handleMessage('peerA', wsA, JSON.stringify({
         type: 'sync-event',
-        event: { action: 'play', currentTime: 10, timestamp: 1000, videoId: 'v1' },
+        event: syncEvent(),
       }));
       const messagesA = getSentMessages(wsA);
       expect(messagesA.some((m: unknown) => (m as Record<string, unknown>).type === 'sync-event')).toBe(false);
@@ -74,7 +85,7 @@ describe('MessageHandler', () => {
     it('should update room videoState on play/pause/seek', () => {
       handler.handleMessage('peerA', wsA, JSON.stringify({
         type: 'sync-event',
-        event: { action: 'play', currentTime: 42, timestamp: 1000, videoId: 'v1' },
+        event: syncEvent({ currentTime: 42 }),
       }));
       const room = roomManager.getRoom(codeA);
       expect(room!.videoState).not.toBeNull();
@@ -86,7 +97,7 @@ describe('MessageHandler', () => {
       const wsUnknown = createMockWebSocket();
       handler.handleMessage('unknownPeer', wsUnknown, JSON.stringify({
         type: 'sync-event',
-        event: { action: 'play', currentTime: 0, timestamp: 1000, videoId: 'v1' },
+        event: syncEvent({ currentTime: 0 }),
       }));
       const messages = getSentMessages(wsUnknown);
       expect(messages.some((m: unknown) => (m as Record<string, unknown>).type === 'error')).toBe(true);
@@ -95,12 +106,29 @@ describe('MessageHandler', () => {
     it('should attach fromPeer to relayed event', () => {
       handler.handleMessage('peerA', wsA, JSON.stringify({
         type: 'sync-event',
-        event: { action: 'pause', currentTime: 5, timestamp: 1000, videoId: 'v1' },
+        event: syncEvent({ action: 'pause', currentTime: 5 }),
       }));
       const messagesB = getSentMessages(wsB);
       const syncMsg = messagesB.find((m: unknown) => (m as Record<string, unknown>).type === 'sync-event') as Record<string, unknown> | undefined;
       expect(syncMsg).toBeDefined();
       expect(syncMsg!.fromPeer).toBe('peerA');
+      expect(syncMsg!.sequence).toBe(1);
+    });
+
+    it('should increment room sequence for each sync event', () => {
+      handler.handleMessage('peerA', wsA, JSON.stringify({
+        type: 'sync-event',
+        event: syncEvent({ eventId: 'evt-1' }),
+      }));
+      handler.handleMessage('peerA', wsA, JSON.stringify({
+        type: 'sync-event',
+        event: syncEvent({ action: 'pause', eventId: 'evt-2' }),
+      }));
+
+      const messagesB = getSentMessages(wsB).filter((m: unknown) => (m as Record<string, unknown>).type === 'sync-event') as Record<string, unknown>[];
+      expect(messagesB[0]?.sequence).toBe(1);
+      expect(messagesB[1]?.sequence).toBe(2);
+      expect(roomManager.getRoom(codeA)?.lastSequence).toBe(2);
     });
   });
 

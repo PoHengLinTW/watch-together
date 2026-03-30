@@ -10,6 +10,17 @@ import {
 } from '../helpers/serverHelper.js';
 import type { ServerMessage } from '@watchtogether/shared';
 
+function syncEvent(overrides: Record<string, unknown> = {}) {
+  return {
+    action: 'play' as const,
+    currentTime: 0,
+    timestamp: Date.now(),
+    videoId: 'vid1',
+    eventId: 'evt-default',
+    ...overrides,
+  };
+}
+
 describe('Server Integration', () => {
   let server: TestServer;
   let clients: WebSocket[];
@@ -20,12 +31,12 @@ describe('Server Integration', () => {
   });
 
   afterEach(async () => {
-    for (const client of clients) {
+    for (const client of clients ?? []) {
       if (client.readyState === WebSocket.OPEN) {
         client.close();
       }
     }
-    await server.close();
+    await server?.close();
   });
 
   /** Helper: create a tracked client (auto-cleaned up in afterEach) */
@@ -89,13 +100,14 @@ describe('Server Integration', () => {
 
       sendMessage(wsA, {
         type: 'sync-event',
-        event: { action: 'play', currentTime: 5, timestamp: Date.now(), videoId: 'vid1' },
+        event: syncEvent({ currentTime: 5, eventId: 'evt-play-1' }),
       });
 
       const syncMsg = await waitForMessage(wsB, (m) => m.type === 'sync-event') as Extract<ServerMessage, { type: 'sync-event' }>;
 
       expect(syncMsg.fromPeer).toBe(peerIdA);
       expect(syncMsg.event.action).toBe('play');
+      expect(syncMsg.sequence).toBe(1);
 
       // A should NOT receive an echo — wait briefly and confirm no sync-event arrives
       await expect(
@@ -116,7 +128,7 @@ describe('Server Integration', () => {
       // Room still alive: A can send sync event without NOT_IN_ROOM error
       sendMessage(wsA, {
         type: 'sync-event',
-        event: { action: 'pause', currentTime: 3, timestamp: Date.now(), videoId: 'vid1' },
+        event: syncEvent({ action: 'pause', currentTime: 3, eventId: 'evt-pause-1' }),
       });
       // No error should arrive within a short window
       await expect(
@@ -150,7 +162,7 @@ describe('Server Integration', () => {
       const playTime = 10;
       sendMessage(wsA, {
         type: 'sync-event',
-        event: { action: 'play', currentTime: playTime, timestamp: Date.now(), videoId: 'vid1' },
+        event: syncEvent({ currentTime: playTime, eventId: 'evt-play-join' }),
       });
 
       // Small delay to let state propagate
@@ -189,7 +201,7 @@ describe('Server Integration', () => {
       const ws = await connect();
       sendMessage(ws, {
         type: 'sync-event',
-        event: { action: 'play', currentTime: 0, timestamp: Date.now(), videoId: 'vid1' },
+        event: syncEvent({ currentTime: 0, eventId: 'evt-not-in-room' }),
       });
       const err = await waitForMessage(ws, (m) => m.type === 'error') as Extract<ServerMessage, { type: 'error' }>;
       expect(err.errorCode).toBe('NOT_IN_ROOM');
@@ -234,6 +246,30 @@ describe('Server Integration', () => {
 
       const peerLeft = await waitForMessage(wsA, (m) => m.type === 'peer-left', 1000) as Extract<ServerMessage, { type: 'peer-left' }>;
       expect(peerLeft.peerId).toBe(peerIdB);
+    });
+
+    it('conflicting events converge by server sequence order', async () => {
+      const { ws: wsA, code } = await createRoom();
+      const { ws: wsB } = await joinRoom(code);
+      await waitForMessage(wsA, (m) => m.type === 'peer-joined');
+
+      sendMessage(wsA, {
+        type: 'sync-event',
+        event: syncEvent({ action: 'play', currentTime: 12, eventId: 'evt-a-1' }),
+      });
+      sendMessage(wsB, {
+        type: 'sync-event',
+        event: syncEvent({ action: 'pause', currentTime: 18, eventId: 'evt-b-1' }),
+      });
+
+      const syncForB = await waitForMessage(wsB, (m) => m.type === 'sync-event') as Extract<ServerMessage, { type: 'sync-event' }>;
+      const syncForA = await waitForMessage(wsA, (m) => m.type === 'sync-event') as Extract<ServerMessage, { type: 'sync-event' }>;
+
+      expect(syncForB.sequence).toBe(1);
+      expect(syncForA.sequence).toBe(2);
+      expect(server.roomManager.getRoom(code)?.lastSequence).toBe(2);
+      expect(server.roomManager.getRoom(code)?.videoState?.playing).toBe(false);
+      expect(server.roomManager.getRoom(code)?.videoState?.currentTime).toBe(18);
     });
   });
 });

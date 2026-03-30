@@ -2,6 +2,13 @@ import { describe, it, expect } from 'vitest';
 import { applyEvent, getAdjustedTime } from '../../src/VideoState.js';
 import type { VideoState } from '@watchtogether/shared';
 
+function syncEvent<T extends Record<string, unknown>>(event: T): T & { eventId: string } {
+  return {
+    ...event,
+    eventId: 'evt-1',
+  };
+}
+
 const BASE_STATE: VideoState = {
   url: 'https://example.com/video',
   videoId: 'vid1',
@@ -19,6 +26,7 @@ describe('VideoState', () => {
         currentTime: 15,
         timestamp: 2000,
         videoId: 'vid1',
+        eventId: 'evt-1',
       });
       expect(result.currentTime).toBe(15);
       expect(result.playing).toBe(true);
@@ -31,6 +39,7 @@ describe('VideoState', () => {
         currentTime: 30,
         timestamp: 3000,
         videoId: 'vid1',
+        eventId: 'evt-1',
       });
       expect(result.currentTime).toBe(30);
       expect(result.playing).toBe(false);
@@ -42,6 +51,7 @@ describe('VideoState', () => {
         currentTime: 99,
         timestamp: 4000,
         videoId: 'vid1',
+        eventId: 'evt-1',
       });
       expect(result.currentTime).toBe(99);
       // playing state should be preserved
@@ -54,6 +64,7 @@ describe('VideoState', () => {
         rate: 2,
         timestamp: 5000,
         videoId: 'vid1',
+        eventId: 'evt-1',
       });
       expect(result.playbackRate).toBe(2);
     });
@@ -63,17 +74,18 @@ describe('VideoState', () => {
         action: 'url-change',
         url: 'https://new.example.com/video',
         timestamp: 6000,
+        eventId: 'evt-1',
       });
       expect(result.url).toBe('https://new.example.com/video');
     });
 
     it('should update updatedAt timestamp on every event', () => {
       const events = [
-        { action: 'play' as const, currentTime: 0, timestamp: 100, videoId: 'v' },
-        { action: 'pause' as const, currentTime: 0, timestamp: 200, videoId: 'v' },
-        { action: 'seek' as const, currentTime: 0, timestamp: 300, videoId: 'v' },
-        { action: 'playbackRate' as const, rate: 1, timestamp: 400, videoId: 'v' },
-        { action: 'url-change' as const, url: 'x', timestamp: 500 },
+        syncEvent({ action: 'play' as const, currentTime: 0, timestamp: 100, videoId: 'v' }),
+        syncEvent({ action: 'pause' as const, currentTime: 0, timestamp: 200, videoId: 'v' }),
+        syncEvent({ action: 'seek' as const, currentTime: 0, timestamp: 300, videoId: 'v' }),
+        syncEvent({ action: 'playbackRate' as const, rate: 1, timestamp: 400, videoId: 'v' }),
+        syncEvent({ action: 'url-change' as const, url: 'x', timestamp: 500 }),
       ];
       for (const event of events) {
         const result = applyEvent(BASE_STATE, event);

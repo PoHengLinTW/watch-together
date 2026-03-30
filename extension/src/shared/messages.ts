@@ -12,7 +12,7 @@ export interface DebugLogMessage {
 }
 
 export type BackgroundMessage =
-  | { type: 'sync-event'; event: SyncEvent; fromPeer: string }
+  | { type: 'sync-event'; event: SyncEvent; fromPeer: string; sequence: number }
   | DebugLogMessage;
 
 /** Sent from popup to background service worker via chrome.runtime.sendMessage */

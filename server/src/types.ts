@@ -7,4 +7,5 @@ export interface Room {
   createdAt: number;
   lastActivity: number;
   videoState: VideoState | null;
+  lastSequence: number;
 }

@@ -142,6 +142,8 @@ export class MessageHandler {
       return;
     }
 
+    room.lastSequence += 1;
+
     // Update room's video state
     room.videoState = applyEvent(room.videoState, message.event);
     this.roomManager.updateActivity(room.code);
@@ -149,7 +151,12 @@ export class MessageHandler {
     // Relay to all other peers
     for (const [otherPeerId, otherWs] of room.peers) {
       if (otherPeerId !== peerId) {
-        this.send(otherWs, { type: 'sync-event', event: message.event, fromPeer: peerId });
+        this.send(otherWs, {
+          type: 'sync-event',
+          event: message.event,
+          fromPeer: peerId,
+          sequence: room.lastSequence,
+        });
       }
     }
   }

@@ -50,6 +50,7 @@ export function initBackground(options: BackgroundOptions): { connectionManager:
           type: 'sync-event',
           event: msg.event,
           fromPeer: msg.fromPeer,
+          sequence: msg.sequence,
         };
         log('bg:forward-to-tabs', outgoing);
         broadcastToTabs(outgoing);

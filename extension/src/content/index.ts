@@ -41,7 +41,7 @@ export function initContentScript(options: ContentScriptOptions): {
       logger.log(`mirror:${msg.event}`, msg.payload);
     } else if (msg.type === 'sync-event') {
       logger.log('content:recv-sync-event', msg);
-      controller.applyRemoteEvent(msg.event);
+      controller.applyRemoteEvent(msg.event, msg.sequence);
     }
   });
 

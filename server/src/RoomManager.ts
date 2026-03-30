@@ -39,6 +39,7 @@ export class RoomManager {
       createdAt: now,
       lastActivity: now,
       videoState: null,
+      lastSequence: 0,
     };
     this.rooms.set(code, room);
     return code;

@@ -26,6 +26,7 @@ interface ClientInfo {
 export interface ServerHandle {
   server: http.Server;
   wss: WebSocketServer;
+  roomManager: RoomManager;
   close: () => Promise<void>;
 }
 
@@ -115,7 +116,7 @@ export function createServer(config: ServerConfig): ServerHandle {
 
   server.listen(config.port);
 
-  return { server, wss, close };
+  return { server, wss, roomManager, close };
 }
 
 // Auto-start when run directly

@@ -109,6 +109,9 @@ export class MessageHandler {
 
     this.logger?.info('Peer joined room', { code: code.toUpperCase(), peerId });
     const room = this.roomManager.getRoom(code);
+    // room is guaranteed to exist here because joinRoom succeeded above.
+    // room.peers.size already includes the newly joined peer.
+    // The `1` fallback is unreachable but satisfies the type-checker.
     const peerCount = room ? room.peers.size : 1;
     this.send(ws, { type: 'room-joined', code: code.toUpperCase(), peerId, state: joinResult.videoState, peerCount });
 

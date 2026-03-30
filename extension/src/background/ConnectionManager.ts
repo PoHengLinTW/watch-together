@@ -98,12 +98,16 @@ export class ConnectionManager {
   }
 
   private openSocket(): void {
+    // Reset before creating the socket so that any onerror/onclose fired
+    // synchronously during construction doesn't get swallowed by the guard.
     this.disconnecting = false;
     this.setState('CONNECTING');
     const ws = this.wsFactory(this.url);
     this.ws = ws;
 
     ws.onopen = () => {
+      // Reset again on open: a race between onerror and onopen could leave
+      // disconnecting=true, which would block the next handleDisconnect call.
       this.disconnecting = false;
       this.retryCount = 0;
       this.setState('CONNECTED');

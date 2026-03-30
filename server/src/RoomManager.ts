@@ -14,7 +14,6 @@ export type JoinResult =
 export interface LeaveResult {
   leavingPeerId: string;
   remainingPeers: Map<string, WebSocket>;
-  destroyed: boolean;
 }
 
 export class RoomManager {
@@ -94,7 +93,6 @@ export class RoomManager {
     return {
       leavingPeerId: peerId,
       remainingPeers: new Map(room.peers),
-      destroyed: false,
     };
   }
 

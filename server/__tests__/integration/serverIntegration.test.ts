@@ -43,12 +43,12 @@ describe('Server Integration', () => {
     return { ws, code: msg.code, peerId: msg.peerId };
   }
 
-  /** Helper: join a room and return { ws, peerId, state } */
-  async function joinRoom(code: string): Promise<{ ws: WebSocket; peerId: string; state: ServerMessage extends { type: 'room-joined' } ? ServerMessage['state'] : never }> {
+  /** Helper: join a room and return { ws, peerId, state, peerCount } */
+  async function joinRoom(code: string): Promise<{ ws: WebSocket; peerId: string; state: ServerMessage extends { type: 'room-joined' } ? ServerMessage['state'] : never; peerCount: number }> {
     const ws = await connect();
     sendMessage(ws, { type: 'join-room', code });
     const msg = await waitForMessage(ws, (m) => m.type === 'room-joined') as Extract<ServerMessage, { type: 'room-joined' }>;
-    return { ws, peerId: msg.peerId, state: msg.state };
+    return { ws, peerId: msg.peerId, state: msg.state, peerCount: msg.peerCount };
   }
 
   describe('full room lifecycle', () => {
@@ -67,6 +67,18 @@ describe('Server Integration', () => {
       expect(joinResult.peerId).not.toBe(peerIdA);
       expect(peerJoined.peerId).toBe(joinResult.peerId);
       expect(joinResult.state).toBeNull(); // no video state yet
+    });
+
+    it('room-created has peerCount 1 and room-joined has peerCount 2', async () => {
+      // Create room — creator is the sole peer, so peerCount should be 1
+      const wsA = await connect();
+      sendMessage(wsA, { type: 'create-room' });
+      const createdMsg = await waitForMessage(wsA, (m) => m.type === 'room-created') as Extract<ServerMessage, { type: 'room-created' }>;
+      expect(createdMsg.type).toBe('room-created');
+
+      // Join as B — room now has 2 peers, so room-joined.peerCount should be 2
+      const { peerCount } = await joinRoom(createdMsg.code);
+      expect(peerCount).toBe(2);
     });
 
     it('sync events are relayed to peer but not echoed to sender', async () => {

@@ -112,22 +112,58 @@ describe('ConnectionManager', () => {
       expect(instances.length).toBeGreaterThanOrEqual(countBefore);
     });
 
-    it('should stop reconnecting after 5 failures', () => {
+    it('should switch to slow retry (60s) after exhausting 15 fast retries', () => {
       const { factory, instances } = createWsFactory();
       const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
 
       manager.connect(SERVER_URL);
 
-      // Fail 5 times without ever successfully connecting
-      for (let i = 0; i < 5; i++) {
-        const ws = instances[instances.length - 1];
-        ws.simulateClose(1006);
-        vi.advanceTimersByTime(30001); // advance past any backoff
+      // Exhaust all 15 fast retries:
+      // Each iteration: close current socket → retryCount++ → advance past backoff → new socket opens
+      // On the 16th close (retryCount === 15), slow-retry fires (no immediate new socket)
+      for (let i = 0; i < 15; i++) {
+        instances[instances.length - 1].simulateClose(1006);
+        vi.advanceTimersByTime(30001); // past any fast backoff, opens next socket
       }
+      // Close the 16th socket — retryCount is now 15 = MAX_RETRIES → slow retry
+      instances[instances.length - 1].simulateClose(1006);
 
-      const countAfter5 = instances.length;
-      vi.advanceTimersByTime(60000); // advance well past any potential retry
-      expect(instances.length).toBe(countAfter5);
+      // Should still be RECONNECTING, not DISCONNECTED
+      expect(manager.getState()).toBe('RECONNECTING');
+
+      // No new socket yet (slow retry fires after 60s)
+      const countBefore = instances.length;
+      vi.advanceTimersByTime(30001); // not enough for slow retry
+      expect(instances.length).toBe(countBefore);
+
+      // After 60s total past last close, slow retry fires
+      vi.advanceTimersByTime(30001); // total: ~60s past the last close
+      expect(instances.length).toBeGreaterThan(countBefore);
+    });
+
+    it('should keep slow-retrying indefinitely (not stop after one slow attempt)', () => {
+      const { factory, instances } = createWsFactory();
+      const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
+
+      manager.connect(SERVER_URL);
+
+      // Exhaust fast retries
+      for (let i = 0; i < 15; i++) {
+        instances[instances.length - 1].simulateClose(1006);
+        vi.advanceTimersByTime(30001);
+      }
+      instances[instances.length - 1].simulateClose(1006); // triggers slow retry
+
+      // First slow retry fires at 60s
+      vi.advanceTimersByTime(60001);
+      instances[instances.length - 1].simulateClose(1006); // slow-retry socket fails too
+
+      // Should schedule another 60s retry
+      const countBefore = instances.length;
+      vi.advanceTimersByTime(60001);
+      expect(instances.length).toBeGreaterThan(countBefore);
+      // After the retry fires, the new socket is CONNECTING (not DISCONNECTED)
+      expect(manager.getState()).not.toBe('DISCONNECTED');
     });
 
     it('should rejoin room on successful reconnect', () => {
@@ -347,22 +383,22 @@ describe('ConnectionManager', () => {
       expect(states).not.toContain('DISCONNECTED');
     });
 
-    it('should enter DISCONNECTED state after exhausting all retries', () => {
+    it('should remain RECONNECTING (slow retry) after exhausting all fast retries', () => {
       const { factory, instances } = createWsFactory();
       const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });
 
       manager.connect(SERVER_URL);
 
       // Each close+advance fires the retry and opens a new socket.
-      // After 5 retries (retryCount reaches MAX_RETRIES=5), the 6th close gets DISCONNECTED.
-      for (let i = 0; i < 5; i++) {
+      // After 15 retries (retryCount reaches MAX_RETRIES=15), the next close triggers slow retry.
+      for (let i = 0; i < 15; i++) {
         instances[instances.length - 1].simulateClose(1006);
         vi.advanceTimersByTime(30001); // advance past backoff, opens next socket
       }
-      // Close the 6th socket — retryCount=5 = MAX_RETRIES → DISCONNECTED
+      // Close the 16th socket — retryCount=15 = MAX_RETRIES → slow retry, stays RECONNECTING
       instances[instances.length - 1].simulateClose(1006);
 
-      expect(manager.getState()).toBe('DISCONNECTED');
+      expect(manager.getState()).toBe('RECONNECTING');
     });
 
     it('should enter RECONNECTING on heartbeat timeout when retries remain', () => {

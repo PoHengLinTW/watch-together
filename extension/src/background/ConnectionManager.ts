@@ -8,8 +8,9 @@ interface ConnectionManagerOptions {
   onStateChange?: (state: ConnectionState) => void;
 }
 
-const MAX_RETRIES = 5;
+const MAX_RETRIES = 15;
 const HEARTBEAT_TIMEOUT_MS = 45000;
+const SLOW_RETRY_MS = 60000;
 
 function backoffMs(attempt: number): number {
   return Math.min(1000 * Math.pow(2, attempt), 30000);
@@ -160,8 +161,8 @@ export class ConnectionManager {
     this.clearHeartbeat();
     this.ws = null;
 
+    this.setState('RECONNECTING');
     if (this.retryCount < MAX_RETRIES) {
-      this.setState('RECONNECTING');
       const delay = backoffMs(this.retryCount);
       this.retryCount++;
       this.retryTimer = setTimeout(() => {
@@ -169,7 +170,11 @@ export class ConnectionManager {
         this.openSocket();
       }, delay);
     } else {
-      this.setState('DISCONNECTED');
+      // Fast retries exhausted — slow retry every 60s indefinitely
+      this.retryTimer = setTimeout(() => {
+        this.retryTimer = null;
+        this.openSocket();
+      }, SLOW_RETRY_MS);
     }
   }
 

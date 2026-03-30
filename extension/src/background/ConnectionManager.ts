@@ -30,6 +30,8 @@ export class ConnectionManager {
 
   private heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
 
+  private disconnecting = false;
+
   private roomCode: string | null = null;
   private peerCount = 0;
 
@@ -95,11 +97,13 @@ export class ConnectionManager {
   }
 
   private openSocket(): void {
+    this.disconnecting = false;
     this.setState('CONNECTING');
     const ws = this.wsFactory(this.url);
     this.ws = ws;
 
     ws.onopen = () => {
+      this.disconnecting = false;
       this.retryCount = 0;
       this.setState('CONNECTED');
       this.flushQueue();
@@ -151,6 +155,8 @@ export class ConnectionManager {
   }
 
   private handleDisconnect(): void {
+    if (this.disconnecting) return;
+    this.disconnecting = true;
     this.clearHeartbeat();
     this.ws = null;
 

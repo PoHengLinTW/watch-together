@@ -400,6 +400,30 @@ describe('ConnectionManager', () => {
       expect(sent).toContainEqual({ type: 'create-room' });
     });
 
+    it('should only enter RECONNECTING once when both onerror and onclose fire', () => {
+      const { factory, instances } = createWsFactory();
+      const states: string[] = [];
+      const manager = new ConnectionManager({
+        wsFactory: factory as unknown as (url: string) => WebSocket,
+        onStateChange: (s) => states.push(s),
+      });
+
+      manager.connect(SERVER_URL);
+      instances[0].simulateOpen();
+
+      // Real WebSocket fires both onerror AND onclose on a network drop
+      instances[0].simulateError();
+      instances[0].simulateClose(1006);
+
+      // RECONNECTING should appear exactly once — guard prevents double-count
+      expect(states.filter((s) => s === 'RECONNECTING')).toHaveLength(1);
+      expect(manager.getState()).toBe('RECONNECTING');
+
+      // Advance past first retry (1s) — exactly one new socket should be created
+      vi.advanceTimersByTime(1000);
+      expect(instances).toHaveLength(2);
+    });
+
     it('should clear room code on clearRoom() to prevent auto-rejoin', () => {
       const { factory, instances } = createWsFactory();
       const manager = new ConnectionManager({ wsFactory: factory as unknown as (url: string) => WebSocket });

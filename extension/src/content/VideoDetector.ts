@@ -10,18 +10,25 @@ interface VideoDetectorOptions {
   document: Pick<Document, 'querySelectorAll' | 'body'>;
   onVideosFound?: (videos: HTMLVideoElement[]) => void;
   logger?: DebugLogger;
+  pollIntervalMs?: number;
 }
+
+const DEFAULT_POLL_INTERVAL_MS = 2000;
 
 export class VideoDetector {
   private doc: Pick<Document, 'querySelectorAll' | 'body'>;
   private onVideosFound: ((videos: HTMLVideoElement[]) => void) | undefined;
   private logger: DebugLogger | undefined;
   private observer: MutationObserver | null = null;
+  private pollIntervalMs: number;
+  private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private knownVideos = new Set<HTMLVideoElement>();
 
   constructor(options: VideoDetectorOptions) {
     this.doc = options.document;
     this.onVideosFound = options.onVideosFound;
     this.logger = options.logger;
+    this.pollIntervalMs = options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
   }
 
   scan(): HTMLVideoElement[] {
@@ -44,29 +51,61 @@ export class VideoDetector {
       count: videos.length,
       videoIds: videos.map((video) => (video as unknown as { dataset: Record<string, string> }).dataset.vid ?? null),
     });
-    if (videos.length > 0) {
-      this.logger?.log('detector:videos-found', { count: videos.length });
-      this.onVideosFound?.(videos);
+
+    const newVideos = videos.filter((video) => !this.knownVideos.has(video));
+    for (const video of newVideos) {
+      this.knownVideos.add(video);
     }
-    return videos;
+
+    this.logger?.log('detector:scan-new-result', {
+      count: newVideos.length,
+      videoIds: newVideos.map((video) => (video as unknown as { dataset: Record<string, string> }).dataset.vid ?? null),
+    });
+
+    if (newVideos.length > 0) {
+      this.logger?.log('detector:videos-found', { count: newVideos.length });
+      this.onVideosFound?.(newVideos);
+    }
+    return newVideos;
   }
 
   observe(): void {
     this.observer = new MutationObserver(() => {
       this.logger?.log('detector:mutation');
-      const videos = this.scan();
-      if (videos.length > 0) {
-        this.logger?.log('detector:mutation-videos-found', { count: videos.length });
-        this.onVideosFound?.(videos);
+      const newVideos = this.scan();
+      if (newVideos.length > 0) {
+        this.logger?.log('detector:mutation-videos-found', { count: newVideos.length });
       }
     });
     this.logger?.log('detector:observe-start');
     this.observer.observe(this.doc.body as Node, { childList: true, subtree: true });
+    this.startPolling();
   }
 
   disconnect(): void {
     this.logger?.log('detector:disconnect');
     this.observer?.disconnect();
     this.observer = null;
+    this.stopPolling();
+  }
+
+  private startPolling(): void {
+    this.stopPolling();
+    this.logger?.log('detector:poll-start', { intervalMs: this.pollIntervalMs });
+    this.pollTimer = setInterval(() => {
+      this.logger?.log('detector:poll-tick');
+      const newVideos = this.scan();
+      if (newVideos.length > 0) {
+        this.logger?.log('detector:poll-videos-found', { count: newVideos.length });
+      }
+    }, this.pollIntervalMs);
+  }
+
+  private stopPolling(): void {
+    if (this.pollTimer !== null) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+      this.logger?.log('detector:poll-stop');
+    }
   }
 }

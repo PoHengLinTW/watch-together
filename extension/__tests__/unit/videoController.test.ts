@@ -92,7 +92,7 @@ describe('VideoController', () => {
 
     it('should observe DOM for deferred Video.js initialization via MutationObserver', () => {
       const mockDoc = setupDomMocks([]);
-      const detector = new VideoDetector({ document: mockDoc as unknown as Document, onVideosFound: vi.fn() });
+      const detector = new VideoDetector({ document: mockDoc as unknown as Document, onVideosFound: vi.fn(), pollIntervalMs: 50 });
       detector.observe();
 
       expect(lastObserver).not.toBeNull();
@@ -131,17 +131,56 @@ describe('VideoController', () => {
       const onVideosFound = vi.fn();
       const mockDoc = setupDomMocks([]);
 
-      const detector = new VideoDetector({ document: mockDoc as unknown as Document, onVideosFound });
+      const detector = new VideoDetector({ document: mockDoc as unknown as Document, onVideosFound, pollIntervalMs: 50 });
       detector.observe();
 
       // Now simulate a mutation that adds a new video
-      mockDoc.querySelectorAll.mockReturnValue([v1] as unknown as NodeListOf<Element>);
+      mockDoc.querySelectorAll.mockImplementation(() => [v1] as unknown as NodeListOf<Element>);
       lastObserver!.simulateMutation([{} as Node]);
 
       expect(onVideosFound).toHaveBeenCalledWith([v1]);
     });
 
+    it('should not emit duplicate videos across repeated scans', () => {
+      const v1 = new MockVideoElement('vid1');
+      const onVideosFound = vi.fn();
+      const mockDoc = setupDomMocks([v1]);
+
+      const detector = new VideoDetector({ document: mockDoc as unknown as Document, onVideosFound });
+
+      const first = detector.scan();
+      const second = detector.scan();
+
+      expect(first).toEqual([v1]);
+      expect(second).toEqual([]);
+      expect(onVideosFound).toHaveBeenCalledTimes(1);
+    });
+
+    it('should pick up videos added later via polling without duplicating known videos', () => {
+      vi.useFakeTimers();
+      const v1 = new MockVideoElement('vid1');
+      const onVideosFound = vi.fn();
+      const mockDoc = setupDomMocks([]);
+
+      const detector = new VideoDetector({
+        document: mockDoc as unknown as Document,
+        onVideosFound,
+        pollIntervalMs: 50,
+      });
+
+      detector.observe();
+      expect(onVideosFound).not.toHaveBeenCalled();
+
+      mockDoc.querySelectorAll.mockImplementation(() => [v1] as unknown as NodeListOf<Element>);
+      vi.advanceTimersByTime(50);
+      expect(onVideosFound).toHaveBeenCalledWith([v1]);
+
+      vi.advanceTimersByTime(50);
+      expect(onVideosFound).toHaveBeenCalledTimes(1);
+    });
+
     it('should log detector scan and mutation events when logger is provided', () => {
+      vi.useFakeTimers();
       const v1 = new MockVideoElement('vid1');
       const log = vi.fn();
       const mockDoc = setupDomMocks([]);
@@ -150,14 +189,18 @@ describe('VideoController', () => {
         document: mockDoc as unknown as Document,
         onVideosFound: vi.fn(),
         logger: { log },
+        pollIntervalMs: 50,
       });
 
       detector.observe();
-      mockDoc.querySelectorAll.mockReturnValue([v1] as unknown as NodeListOf<Element>);
+      mockDoc.querySelectorAll.mockImplementation(() => [v1] as unknown as NodeListOf<Element>);
       lastObserver!.simulateMutation([{} as Node]);
+      vi.advanceTimersByTime(50);
 
       expect(log).toHaveBeenCalledWith('detector:observe-start');
       expect(log).toHaveBeenCalledWith('detector:mutation');
+      expect(log).toHaveBeenCalledWith('detector:poll-start', { intervalMs: 50 });
+      expect(log).toHaveBeenCalledWith('detector:poll-tick');
       expect(log).toHaveBeenCalledWith(
         'detector:scan-result',
         expect.objectContaining({ count: 1, videoIds: ['vid1'] }),

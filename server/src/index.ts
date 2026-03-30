@@ -97,9 +97,12 @@ export function createServer(config: ServerConfig): ServerHandle {
     }
   }, heartbeatIntervalMs);
 
+  const sweepInterval = setInterval(() => roomManager.sweepExpiredRooms(), 60 * 60 * 1000);
+
   const close = (): Promise<void> =>
     new Promise((resolve) => {
       clearInterval(heartbeatInterval);
+      clearInterval(sweepInterval);
 
       for (const [ws, info] of connections) {
         if (info.pongTimer) clearTimeout(info.pongTimer);

@@ -68,6 +68,8 @@ export class ConnectionManager {
   }
 
   disconnect(): void {
+    this.disconnecting = false;
+    this.retryCount = 0;
     this.clearHeartbeat();
     this.clearRetry();
     this.ws?.close();

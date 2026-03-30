@@ -201,7 +201,7 @@ type ClientMessage =
 // === Server → Client ===
 type ServerMessage =
   | { type: 'room-created'; code: string; peerId: string }
-  | { type: 'room-joined'; code: string; peerId: string; state: VideoState | null }
+  | { type: 'room-joined'; code: string; peerId: string; state: VideoState | null; peerCount: number }
   | { type: 'peer-joined'; peerId: string }
   | { type: 'peer-left'; peerId: string }
   | { type: 'sync-event'; event: SyncEvent; fromPeer: string }

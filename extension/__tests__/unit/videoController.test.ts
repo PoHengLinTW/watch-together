@@ -135,6 +135,29 @@ describe('VideoController', () => {
 
       expect(onVideosFound).toHaveBeenCalledWith([v1]);
     });
+
+    it('should log detector scan and mutation events when logger is provided', () => {
+      const v1 = new MockVideoElement('vid1');
+      const log = vi.fn();
+      const mockDoc = setupDomMocks([]);
+
+      const detector = new VideoDetector({
+        document: mockDoc as unknown as Document,
+        onVideosFound: vi.fn(),
+        logger: { log },
+      });
+
+      detector.observe();
+      mockDoc.querySelectorAll.mockReturnValue([v1] as unknown as NodeListOf<Element>);
+      lastObserver!.simulateMutation([{} as Node]);
+
+      expect(log).toHaveBeenCalledWith('detector:observe-start');
+      expect(log).toHaveBeenCalledWith('detector:mutation');
+      expect(log).toHaveBeenCalledWith(
+        'detector:scan-result',
+        expect.objectContaining({ count: 1, videoIds: ['vid1'] }),
+      );
+    });
   });
 
   describe('active video tracking', () => {

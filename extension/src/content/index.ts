@@ -32,6 +32,7 @@ export function initContentScript(options: ContentScriptOptions): {
   const detector = new VideoDetector({
     document,
     onVideosFound: (videos) => controller.attachVideos(videos),
+    logger,
   });
 
   chrome.runtime.onMessage.addListener((message: unknown) => {

@@ -762,4 +762,189 @@ describe('VideoController', () => {
       expect(onAutoplayBlocked).not.toHaveBeenCalled();
     });
   });
+
+  describe('sourceless play (preload=none)', () => {
+    it('should NOT call video.play() when readyState is HAVE_NOTHING', () => {
+      const v1 = new MockVideoElement('vid1');
+      v1.readyState = 0; // HAVE_NOTHING
+      const mockDoc = setupDomMocks([v1]);
+      mockDoc.querySelector = vi.fn(() => v1 as unknown as Element);
+
+      const { onSyncEvent } = makeSyncCapture();
+      const controller = new VideoController({
+        onSyncEvent,
+        document: mockDoc as unknown as Document,
+        requestAnimationFrame: mockRaf,
+        onAutoplayBlocked: vi.fn(),
+      });
+      controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
+
+      const playSpy = vi.spyOn(v1, 'play');
+      controller.applyRemoteEvent(remoteEvent({ action: 'play', currentTime: 60, videoId: 'vid1' }), 1);
+
+      expect(playSpy).not.toHaveBeenCalled();
+    });
+
+    it('should call onAutoplayBlocked with a clickHandler when readyState is HAVE_NOTHING', () => {
+      const v1 = new MockVideoElement('vid1');
+      v1.readyState = 0; // HAVE_NOTHING
+      const mockDoc = setupDomMocks([v1]);
+      mockDoc.querySelector = vi.fn(() => v1 as unknown as Element);
+
+      const onAutoplayBlocked = vi.fn();
+      const { onSyncEvent } = makeSyncCapture();
+      const controller = new VideoController({
+        onSyncEvent,
+        document: mockDoc as unknown as Document,
+        requestAnimationFrame: mockRaf,
+        onAutoplayBlocked,
+      });
+      controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
+
+      const event = remoteEvent({ action: 'play', currentTime: 60, videoId: 'vid1' });
+      controller.applyRemoteEvent(event, 1);
+
+      expect(onAutoplayBlocked).toHaveBeenCalledOnce();
+      const [videoArg, eventArg, clickHandler] = onAutoplayBlocked.mock.calls[0];
+      expect(videoArg).toBe(v1);
+      expect(eventArg).toBe(event);
+      expect(typeof clickHandler).toBe('function');
+    });
+
+    it('clickHandler simulates .vjs-big-play-button click', () => {
+      const v1 = new MockVideoElement('vid1');
+      v1.readyState = 0; // HAVE_NOTHING
+      const mockDoc = setupDomMocks([v1]);
+      mockDoc.querySelector = vi.fn(() => v1 as unknown as Element);
+
+      const mockVjsButton = { click: vi.fn() };
+      v1._closestResult = { querySelector: vi.fn().mockReturnValue(mockVjsButton) };
+
+      const onAutoplayBlocked = vi.fn();
+      const { onSyncEvent } = makeSyncCapture();
+      const controller = new VideoController({
+        onSyncEvent,
+        document: mockDoc as unknown as Document,
+        requestAnimationFrame: mockRaf,
+        onAutoplayBlocked,
+      });
+      controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
+
+      controller.applyRemoteEvent(remoteEvent({ action: 'play', currentTime: 60, videoId: 'vid1' }), 1);
+
+      const clickHandler = onAutoplayBlocked.mock.calls[0][2] as () => void;
+      clickHandler();
+
+      expect(mockVjsButton.click).toHaveBeenCalledOnce();
+    });
+
+    it('falls back to video.play() when .vjs-big-play-button is not found', () => {
+      const v1 = new MockVideoElement('vid1');
+      v1.readyState = 0; // HAVE_NOTHING
+      v1._closestResult = { querySelector: vi.fn().mockReturnValue(null) };
+      const mockDoc = setupDomMocks([v1]);
+      mockDoc.querySelector = vi.fn(() => v1 as unknown as Element);
+
+      const onAutoplayBlocked = vi.fn();
+      const { onSyncEvent } = makeSyncCapture();
+      const controller = new VideoController({
+        onSyncEvent,
+        document: mockDoc as unknown as Document,
+        requestAnimationFrame: mockRaf,
+        onAutoplayBlocked,
+      });
+      controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
+
+      controller.applyRemoteEvent(remoteEvent({ action: 'play', currentTime: 60, videoId: 'vid1' }), 1);
+
+      const clickHandler = onAutoplayBlocked.mock.calls[0][2] as () => void;
+      const playSpy = vi.spyOn(v1, 'play');
+      clickHandler();
+
+      expect(playSpy).toHaveBeenCalledOnce();
+    });
+
+    it('corrects currentTime on canplay with fresh latency', () => {
+      vi.useFakeTimers();
+      const now = 1_700_000_000_000;
+      vi.setSystemTime(now);
+
+      const v1 = new MockVideoElement('vid1');
+      v1.readyState = 0; // HAVE_NOTHING
+      const mockVjsButton = { click: vi.fn() };
+      v1._closestResult = { querySelector: vi.fn().mockReturnValue(mockVjsButton) };
+      const mockDoc = setupDomMocks([v1]);
+      mockDoc.querySelector = vi.fn(() => v1 as unknown as Element);
+
+      const onAutoplayBlocked = vi.fn();
+      const { onSyncEvent } = makeSyncCapture();
+      const controller = new VideoController({
+        onSyncEvent,
+        document: mockDoc as unknown as Document,
+        requestAnimationFrame: mockRaf,
+        onAutoplayBlocked,
+      });
+      controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
+
+      // Remote event sent 200ms ago at time=60s
+      const sentTimestamp = now - 200;
+      controller.applyRemoteEvent(
+        remoteEvent({ action: 'play', currentTime: 60, timestamp: sentTimestamp, videoId: 'vid1' }),
+        1,
+      );
+
+      const clickHandler = onAutoplayBlocked.mock.calls[0][2] as () => void;
+      clickHandler();
+
+      // Simulate VJS finishing source load (500ms after click)
+      vi.advanceTimersByTime(500);
+      v1.dispatchEvent('canplay');
+
+      // Total latency since event was sent = 200ms + 500ms = 700ms = 0.7s
+      expect(v1.currentTime).toBeCloseTo(60.7, 1);
+    });
+
+    it('suppresses play and seeked echoes after VJS loads source', async () => {
+      vi.useFakeTimers();
+      const now = 1_700_000_000_000;
+      vi.setSystemTime(now);
+
+      const v1 = new MockVideoElement('vid1');
+      v1.readyState = 0; // HAVE_NOTHING
+      const mockVjsButton = { click: vi.fn() };
+      v1._closestResult = { querySelector: vi.fn().mockReturnValue(mockVjsButton) };
+      const mockDoc = setupDomMocks([v1]);
+      mockDoc.querySelector = vi.fn(() => v1 as unknown as Element);
+
+      const onAutoplayBlocked = vi.fn();
+      const { events, onSyncEvent } = makeSyncCapture();
+      const controller = new VideoController({
+        onSyncEvent,
+        document: mockDoc as unknown as Document,
+        requestAnimationFrame: mockRaf,
+        onAutoplayBlocked,
+      });
+      controller.attachVideos([v1] as unknown as HTMLVideoElement[]);
+
+      controller.applyRemoteEvent(
+        remoteEvent({ action: 'play', currentTime: 60, videoId: 'vid1' }),
+        1,
+      );
+
+      const clickHandler = onAutoplayBlocked.mock.calls[0][2] as () => void;
+      clickHandler();
+
+      vi.advanceTimersByTime(300);
+      v1.dispatchEvent('canplay'); // triggers currentTime seek
+
+      const eventsBefore = events.length;
+
+      // VJS fires play event after loading source — should be suppressed
+      v1.dispatchEvent('play');
+      // seek correction fires seeked — should be suppressed
+      v1.dispatchEvent('seeked');
+
+      expect(events.length).toBe(eventsBefore);
+    });
+  });
 });

@@ -25,7 +25,7 @@ export function initContentScript(options: ContentScriptOptions): {
     },
     document,
     requestAnimationFrame: raf,
-    onAutoplayBlocked: showAutoplayOverlay,
+    onAutoplayBlocked: (video, event, clickHandler) => showAutoplayOverlay(video, event, clickHandler),
     logger,
   });
 

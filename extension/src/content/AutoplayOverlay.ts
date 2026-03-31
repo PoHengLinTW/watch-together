@@ -2,8 +2,20 @@ import type { SyncEvent } from '@watchtogether/shared';
 
 const OVERLAY_ATTR = 'data-watchtogether-overlay';
 
-/** Show a click-to-play overlay over a video that was blocked by autoplay policy. */
-export function showAutoplayOverlay(video: HTMLVideoElement, event: SyncEvent): void {
+/**
+ * Show a click-to-play overlay over a video that needs a user gesture.
+ *
+ * @param clickHandler - Optional custom handler for the overlay click.
+ *   Provided for the preload=none case (HAVE_NOTHING), where clicking the
+ *   overlay should trigger Video.js's source-resolution flow instead of
+ *   calling video.play() directly.
+ *   When omitted, falls back to the original autoplay-policy-blocked behavior.
+ */
+export function showAutoplayOverlay(
+  video: HTMLVideoElement,
+  event: SyncEvent,
+  clickHandler?: () => void,
+): void {
   // Prevent duplicate overlays on the same video
   const parent = video.parentElement;
   if (!parent || parent.querySelector(`[${OVERLAY_ATTR}]`)) return;
@@ -43,13 +55,23 @@ export function showAutoplayOverlay(video: HTMLVideoElement, event: SyncEvent): 
 
   parent.appendChild(overlay);
 
-  overlay.addEventListener('click', () => {
-    overlay.remove();
-    if (event.action === 'play') {
-      video.currentTime = event.currentTime;
-    }
-    video.play().catch(() => {
-      // If play still fails after user gesture, remove the overlay and give up
-    });
-  }, { once: true });
+  overlay.addEventListener(
+    'click',
+    () => {
+      overlay.remove();
+      if (clickHandler) {
+        // Sourceless play: delegate to VideoController's handler which clicks .vjs-big-play-button
+        clickHandler();
+      } else {
+        // Autoplay policy blocked: set time and play directly (src is already loaded)
+        if (event.action === 'play') {
+          video.currentTime = event.currentTime;
+        }
+        video.play().catch(() => {
+          // If play still fails after user gesture, give up gracefully
+        });
+      }
+    },
+    { once: true },
+  );
 }

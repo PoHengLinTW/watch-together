@@ -20,7 +20,7 @@ interface VideoControllerOptions {
   onSyncEvent: (event: SyncEvent) => void;
   document?: Pick<Document, 'querySelector' | 'querySelectorAll'>;
   requestAnimationFrame?: RafFn;
-  onAutoplayBlocked?: (video: HTMLVideoElement, event: SyncEvent) => void;
+  onAutoplayBlocked?: (video: HTMLVideoElement, event: SyncEvent, clickHandler?: () => void) => void;
   logger?: DebugLogger;
 }
 
@@ -32,7 +32,7 @@ export class VideoController {
   private onSyncEvent: (event: SyncEvent) => void;
   private doc: Pick<Document, 'querySelector' | 'querySelectorAll'>;
   private raf: RafFn;
-  private onAutoplayBlocked: ((video: HTMLVideoElement, event: SyncEvent) => void) | undefined;
+  private onAutoplayBlocked: ((video: HTMLVideoElement, event: SyncEvent, clickHandler?: () => void) => void) | undefined;
   private logger: DebugLogger | undefined;
   private videos: HTMLVideoElement[] = [];
   private activeVideo: HTMLVideoElement | null = null;
@@ -106,6 +106,10 @@ export class VideoController {
 
     switch (event.action) {
       case 'play': {
+        if (video.readyState === 0 /* HAVE_NOTHING */) {
+          this.handleSourcelessPlay(video, event as Extract<SyncEvent, { action: 'play' }>, sequence);
+          return;
+        }
         const latency = (Date.now() - event.timestamp) / 1000;
         const targetTime = event.currentTime + latency;
         effect.expectedCurrentTime = targetTime;
@@ -167,6 +171,76 @@ export class VideoController {
       suppressSeeked: effect.suppressSeeked,
       suppressRateChange: effect.suppressRateChange,
     });
+  }
+
+  /**
+   * Called when a remote 'play' event arrives but the video has no source loaded yet
+   * (readyState === HAVE_NOTHING — anime1.me's preload="none" case).
+   *
+   * Instead of calling video.play() directly (which fails — src is empty), we:
+   * 1. Register a long-lived PendingRemoteEffect to suppress the upcoming play echo.
+   * 2. Register a one-time `canplay` listener that corrects currentTime with fresh latency.
+   * 3. Pass a clickHandler to onAutoplayBlocked that clicks .vjs-big-play-button,
+   *    triggering Video.js's source-resolution API call.
+   */
+  private handleSourcelessPlay(
+    video: HTMLVideoElement,
+    event: Extract<SyncEvent, { action: 'play' }>,
+    sequence: number,
+  ): void {
+    this.activeVideo = video;
+    this.lastAppliedSequence.set(event.videoId, sequence);
+
+    // Long-lived effect: suppress the VJS-triggered play echo (source load can take seconds)
+    const effect: PendingRemoteEffect = {
+      eventId: event.eventId,
+      sequence,
+      action: 'play',
+      expiresAt: Date.now() + 30_000,
+      suppressPlay: true,
+      suppressPause: false,
+      suppressSeeked: false,
+      suppressRateChange: false,
+    };
+    this.pendingRemoteEffects.set(event.videoId, effect);
+
+    // When VJS finishes loading the source, recalculate position with fresh latency
+    video.addEventListener(
+      'canplay',
+      () => {
+        const freshLatency = (Date.now() - event.timestamp) / 1000;
+        const targetTime = event.currentTime + freshLatency;
+        // Tighten the effect TTL now that we're about to seek
+        effect.expiresAt = Date.now() + VideoController.REMOTE_EFFECT_TTL_MS;
+        if (this.shouldAdjustCurrentTime(video.currentTime, targetTime)) {
+          effect.suppressSeeked = true;
+          effect.expectedCurrentTime = targetTime;
+          video.currentTime = targetTime;
+        }
+        this.logger?.log('content:sourceless-play-canplay', {
+          videoId: event.videoId,
+          targetTime,
+          freshLatency,
+        });
+      },
+      { once: true } as AddEventListenerOptions,
+    );
+
+    // The overlay's click handler: trigger VJS source loading instead of video.play()
+    const clickHandler = () => {
+      const container = video.closest('.vjscontainer');
+      const vjsButton = container?.querySelector('.vjs-big-play-button') as HTMLElement | null;
+      if (vjsButton) {
+        this.logger?.log('content:sourceless-play-vjs-click', { videoId: event.videoId });
+        vjsButton.click();
+      } else {
+        // Fallback: best-effort direct play (may succeed if autoplay policy allows)
+        video.play().catch(() => {});
+      }
+    };
+
+    this.logger?.log('content:sourceless-play-overlay', { videoId: event.videoId });
+    this.onAutoplayBlocked?.(video, event, clickHandler);
   }
 
   private handlePlay(video: HTMLVideoElement): void {

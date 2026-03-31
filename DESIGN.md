@@ -62,9 +62,11 @@
 
 **Tech**: Node.js + `ws` library (no Express needed for MVP)
 
+**Components**: `index.ts`, `RoomManager.ts`, `MessageHandler.ts`, `VideoState.ts`, `Logger.ts`, `types.ts`, `utils.ts`
+
 **Responsibilities**:
 - Room lifecycle: create, join, leave, destroy
-- Message relay: broadcast sync events to all *other* peers in room
+- Message relay: broadcast sync events to all *other* peers in room; assigns monotonically increasing `sequence` number per room to each relayed event
 - Heartbeat: detect dead connections (30s ping/pong)
 - Room code generation: 6-char alphanumeric, collision-checked
 
@@ -109,7 +111,7 @@ type ServerMessage =
   | { type: 'room-joined'; code: string; peerId: string; state: VideoState | null; peerCount: number }
   | { type: 'peer-joined'; peerId: string }
   | { type: 'peer-left'; peerId: string }
-  | { type: 'sync-event'; event: SyncEvent; fromPeer: string }
+  | { type: 'sync-event'; event: SyncEvent; fromPeer: string; sequence: number }  // sequence assigned by server per room
   | { type: 'error'; message: string; errorCode: string }
   | { type: 'ping' }
 
@@ -128,13 +130,17 @@ type SyncEvent =
 
 Injected into pages matching `*://anime1.me/*`.
 
+**Components**: `index.ts`, `VideoController.ts`, `VideoDetector.ts`, `AutoplayOverlay.ts`
+
 **Responsibilities**:
 - Detect ALL `<video>` elements on page (listing pages have up to 10+)
 - Track the "active" video: whichever the user last interacted with
 - Hook video events: `play`, `pause`, `seeked`, `ratechange` on ALL videos
 - Apply incoming sync commands to the correct video (matched by `data-vid`)
-- Anti-echo: ignore events that *we* triggered programmatically
+- Anti-echo: ignore events that *we* triggered programmatically (see pending-effects approach below)
 - Include `videoId` (from `data-vid` attribute) in every outgoing sync event
+- Filter stale incoming events by `sequence` number (ignore sequence ≤ last applied)
+- Show `AutoplayOverlay` (click-to-play) when browser blocks a remote `play()` call
 
 **Multi-Video Strategy** (critical for listing pages):
 ```
@@ -173,45 +179,57 @@ Strategy:
 8. No SPA handling needed — episode navigation is full page reload
 ```
 
-**Anti-Echo Mechanism**:
+**Anti-Echo Mechanism** (Pending Remote Effects with TTL):
 When we receive a remote sync event and call `video.play()`, that triggers a local `play` event.
 We must NOT re-broadcast that event back to the server.
 
+The implementation uses a per-video pending-effects map rather than a simple boolean flag. Each
+applied remote effect is recorded with a 1.5s TTL. When a local event fires, it is checked against
+the pending effects using tolerance-based matching (±0.35s for seek, ±0.01 for playbackRate).
+If a matching pending effect is found it is consumed and the local event is suppressed. Effects
+that exceed their TTL are cleaned up automatically.
+
 ```typescript
-class VideoController {
-  private suppressEvents = false;
-
-  applyRemoteEvent(event: SyncEvent) {
-    this.suppressEvents = true;
-    // apply event to video...
-    // Wait for the event to fire, then re-enable
-    requestAnimationFrame(() => {
-      this.suppressEvents = false;
-    });
-  }
-
-  onLocalEvent(event: SyncEvent) {
-    if (this.suppressEvents) return; // anti-echo
-    this.sendToBackground(event);
-  }
+// Conceptual shape — see VideoController.ts for full implementation
+interface PendingEffect {
+  action: string;
+  currentTime?: number;
+  rate?: number;
+  expiresAt: number;    // Date.now() + 1500ms
 }
+
+// Map<videoId, PendingEffect[]>
+private pendingRemoteEffects = new Map<string, PendingEffect[]>();
 ```
 
+**Latency Compensation**:
+When applying a remote `play` event, `VideoController` adds the elapsed time since the event's
+`timestamp` to `currentTime` before seeking, compensating for network latency.
+
 #### 3.2.2 Background Service Worker (`extension/src/background/`)
+
+**Components**: `index.ts`, `ConnectionManager.ts`
 
 **Responsibilities**:
 - Manage WebSocket connection to sync server
 - Bridge messages between content script and server
-- Handle connection lifecycle (reconnect on disconnect)
-- Store room state (code, peerId) in `chrome.storage.session`
+- Handle connection lifecycle (reconnect on disconnect with exponential backoff)
+- Store room state (code, peerId, peerCount) in `chrome.storage.session`
+- Keep service worker alive via `chrome.alarms` (25-min alarm — Chrome kills idle workers after ~30s)
+- Heartbeat timeout: if no `ping` received within 45s, treat as dead connection and trigger reconnect
 
 **Connection State Machine**:
 ```
 DISCONNECTED → CONNECTING → CONNECTED → IN_ROOM
       ↑              │            │          │
-      └──────────────┴────────────┴──────────┘
-                   (on error/close)
+      │         RECONNECTING ←────┴──────────┘
+      │              │           (on error/close)
+      └──────────────┘
+        (after max retries or explicit disconnect)
 ```
+
+Reconnect uses exponential backoff: 1s → 2s → 4s → … → 30s cap. After reconnecting successfully
+while `IN_ROOM`, the background script automatically re-sends `join-room` with the saved room code.
 
 #### 3.2.3 Popup UI (`extension/src/popup/`)
 
@@ -268,13 +286,15 @@ Tests are written BEFORE implementation. The project follows strict Red-Green-Re
 
 ```
         ╱╲
-       ╱ E2E ╲          2-3 tests  (Puppeteer + real extension)
+       ╱ E2E ╲          ~6 tests   (Puppeteer + real extension) — PENDING
       ╱────────╲
-     ╱Integration╲      8-12 tests (real WebSocket, mocked browser)
+     ╱Integration╲      28 tests   (real WebSocket, mocked browser) — ✓ COMPLETE
     ╱──────────────╲
-   ╱   Unit Tests    ╲   30-40 tests (pure functions, no I/O)
+   ╱   Unit Tests    ╲  184 tests  (pure functions, no I/O) — ✓ COMPLETE
   ╱════════════════════╲
 ```
+
+Total passing: **212+ tests** across server and extension workspaces.
 
 ### 5.2 Unit Tests — Server (`server/__tests__/unit/`)
 
@@ -660,13 +680,15 @@ watchtogether/
 │   │   ├── RoomManager.ts
 │   │   ├── MessageHandler.ts
 │   │   ├── VideoState.ts
-│   │   ├── types.ts                   # Shared protocol types
+│   │   ├── Logger.ts                  # Console logger interface
+│   │   ├── types.ts                   # Server-specific types
 │   │   └── utils.ts                   # Code generation, etc.
 │   └── __tests__/
 │       ├── unit/
 │       │   ├── roomManager.test.ts
 │       │   ├── messageHandler.test.ts
-│       │   └── videoState.test.ts
+│       │   ├── videoState.test.ts
+│       │   └── logging.test.ts
 │       └── integration/
 │           └── serverIntegration.test.ts
 │
@@ -675,11 +697,13 @@ watchtogether/
 │   ├── tsconfig.json
 │   ├── vitest.config.ts
 │   ├── manifest.json                  # Chrome Extension Manifest V3
+│   ├── build.mjs                      # esbuild bundler config
 │   ├── src/
 │   │   ├── content/
 │   │   │   ├── index.ts               # Content script entry
 │   │   │   ├── VideoController.ts
-│   │   │   └── VideoDetector.ts
+│   │   │   ├── VideoDetector.ts
+│   │   │   └── AutoplayOverlay.ts     # Click-to-play overlay for blocked autoplay
 │   │   ├── background/
 │   │   │   ├── index.ts               # Service worker entry
 │   │   │   └── ConnectionManager.ts
@@ -689,8 +713,8 @@ watchtogether/
 │   │   │   ├── popup.ts
 │   │   │   └── PopupStateMachine.ts
 │   │   └── shared/
-│   │       ├── types.ts               # Re-exports from protocol
-│   │       └── messages.ts            # Chrome message helpers
+│   │       ├── messages.ts            # Chrome message type definitions
+│   │       └── debug.ts               # Debug logging utility
 │   └── __tests__/
 │       ├── unit/
 │       │   ├── videoController.test.ts
@@ -700,7 +724,15 @@ watchtogether/
 │           └── extensionIntegration.test.ts
 │
 ├── shared/
-│   └── protocol.ts                    # Shared types (symlinked or published)
+│   └── protocol.ts                    # Shared types (used by server and extension)
+│
+├── test/                              # Shared test mocks and helpers
+│   ├── mocks/
+│   │   ├── mockChrome.ts              # Fake chrome.* APIs
+│   │   ├── mockVideo.ts               # Fake HTMLVideoElement
+│   │   └── mockWebSocket.browser.ts   # Fake WebSocket for browser context
+│   └── helpers/
+│       └── serverHelper.ts            # Spin up/down real test server
 │
 └── __tests__/
     └── e2e/

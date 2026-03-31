@@ -73,6 +73,59 @@ Once the server is running and the extension is loaded into Chrome, you can star
 3. **Watch Synchronously**:
    - As long as you remain in the room, whenever anyone plays, pauses, or seeks the video, it will automatically synchronize for all other viewers in the room!
 
+## Project Structure
+
+```
+watchtogether/
+├── server/
+│   └── src/
+│       ├── index.ts             # Entry point
+│       ├── RoomManager.ts       # Room CRUD
+│       ├── MessageHandler.ts    # WS message routing
+│       ├── VideoState.ts        # Video state tracking
+│       ├── Logger.ts            # Console logger
+│       ├── types.ts             # Server-specific types
+│       └── utils.ts             # Room code generation
+├── extension/
+│   ├── manifest.json
+│   ├── build.mjs                # esbuild config
+│   └── src/
+│       ├── content/
+│       │   ├── index.ts
+│       │   ├── VideoController.ts
+│       │   ├── VideoDetector.ts
+│       │   └── AutoplayOverlay.ts
+│       ├── background/
+│       │   ├── index.ts
+│       │   └── ConnectionManager.ts
+│       ├── popup/
+│       │   ├── popup.html
+│       │   ├── popup.css
+│       │   ├── popup.ts
+│       │   └── PopupStateMachine.ts
+│       └── shared/
+│           ├── messages.ts
+│           └── debug.ts
+├── shared/
+│   └── protocol.ts              # Shared message types
+└── test/
+    ├── mocks/                   # mockChrome, mockVideo, mockWebSocket
+    └── helpers/                 # serverHelper (spin up test server)
+```
+
+## Implementation Status
+
+| Phase | Description | Status |
+|---|---|---|
+| Phase 1 | Server unit tests + implementation | ✓ Complete |
+| Phase 2 | Server integration tests | ✓ Complete |
+| Phase 3 | Extension unit tests + implementation | ✓ Complete |
+| Phase 4 | Extension integration tests | ✓ Complete |
+| Phase 5 | E2E tests (Puppeteer) | Pending |
+| Phase 6 | Polish (icons, styling, README) | Pending |
+
+212+ tests pass across server and extension workspaces.
+
 ## Scripts & Maintenance
 
 The root `package.json` contains several helper scripts.

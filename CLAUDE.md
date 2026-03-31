@@ -26,26 +26,26 @@ If you're about to write implementation code, stop and ask: "Is there a failing 
 Follow this exact sequence. Do not skip ahead.
 
 ```
-Phase 1: Server Unit Tests + Implementation
+Phase 1: Server Unit Tests + Implementation                          ✓ COMPLETE
   → server/__tests__/unit/roomManager.test.ts     → server/src/RoomManager.ts
   → server/__tests__/unit/videoState.test.ts       → server/src/VideoState.ts
   → server/__tests__/unit/messageHandler.test.ts   → server/src/MessageHandler.ts
 
-Phase 2: Server Integration
+Phase 2: Server Integration                                          ✓ COMPLETE
   → server/__tests__/integration/serverIntegration.test.ts → server/src/index.ts
 
-Phase 3: Extension Unit Tests + Implementation
+Phase 3: Extension Unit Tests + Implementation                       ✓ COMPLETE
   → extension/__tests__/unit/videoController.test.ts    → extension/src/content/VideoController.ts
   → extension/__tests__/unit/connectionManager.test.ts  → extension/src/background/ConnectionManager.ts
   → extension/__tests__/unit/popupState.test.ts         → extension/src/popup/PopupStateMachine.ts
 
-Phase 4: Extension Integration
+Phase 4: Extension Integration                                       ✓ COMPLETE
   → extension/__tests__/integration/extensionIntegration.test.ts → wire up messaging
 
-Phase 5: E2E Tests
+Phase 5: E2E Tests                                                   ⬜ PENDING
   → __tests__/e2e/watchtogether.e2e.test.ts → fix remaining issues
 
-Phase 6: Polish
+Phase 6: Polish                                                      ⬜ PENDING
   → popup UI styling, icons, error messages, README
 ```
 
@@ -87,6 +87,7 @@ watchtogether/
 │   │   ├── RoomManager.ts       # Room CRUD
 │   │   ├── MessageHandler.ts    # WS message routing
 │   │   ├── VideoState.ts        # Video state tracking
+│   │   ├── Logger.ts            # Console logger interface
 │   │   ├── types.ts             # Server-specific types
 │   │   └── utils.ts             # Room code generation
 │   └── __tests__/
@@ -94,11 +95,13 @@ watchtogether/
 │       └── integration/
 ├── extension/                   # Chrome Extension (Manifest V3)
 │   ├── manifest.json
+│   ├── build.mjs                # esbuild bundler config
 │   ├── src/
 │   │   ├── content/             # Injected into anime1.me pages
 │   │   │   ├── index.ts
 │   │   │   ├── VideoController.ts
-│   │   │   └── VideoDetector.ts
+│   │   │   ├── VideoDetector.ts
+│   │   │   └── AutoplayOverlay.ts  # Click-to-play overlay for blocked autoplay
 │   │   ├── background/          # Service worker
 │   │   │   ├── index.ts
 │   │   │   └── ConnectionManager.ts
@@ -108,13 +111,20 @@ watchtogether/
 │   │   │   ├── popup.ts
 │   │   │   └── PopupStateMachine.ts
 │   │   └── shared/
-│   │       ├── types.ts
-│   │       └── messages.ts
+│   │       ├── messages.ts
+│   │       └── debug.ts         # Debug logging utility
 │   └── __tests__/
 │       ├── unit/
 │       └── integration/
 ├── shared/
 │   └── protocol.ts              # Shared message types
+├── test/                        # Shared test mocks and helpers
+│   ├── mocks/
+│   │   ├── mockChrome.ts
+│   │   ├── mockVideo.ts
+│   │   └── mockWebSocket.browser.ts
+│   └── helpers/
+│       └── serverHelper.ts      # Spin up/down test server
 └── __tests__/
     └── e2e/
 ```
@@ -204,7 +214,7 @@ type ServerMessage =
   | { type: 'room-joined'; code: string; peerId: string; state: VideoState | null; peerCount: number }
   | { type: 'peer-joined'; peerId: string }
   | { type: 'peer-left'; peerId: string }
-  | { type: 'sync-event'; event: SyncEvent; fromPeer: string }
+  | { type: 'sync-event'; event: SyncEvent; fromPeer: string; sequence: number }  // sequence assigned by server
   | { type: 'error'; message: string; errorCode: ErrorCode }
   | { type: 'ping' }
 
@@ -254,6 +264,10 @@ Refer to these when making implementation choices:
 7. **No persistence**: All state is in-memory. Server restart = all rooms gone. This is fine for MVP.
 
 8. **Server deployment**: Self-hosted on homelab behind Cloudflare Tunnel. Extension connects to `wss://watchtogether.<domain>`. Cloudflare handles TLS. No YouTube support in MVP — anime1.me only.
+
+9. **Sequence-based stale event filtering**: The server assigns a monotonically increasing `sequence` number to every relayed `sync-event` (per room). Clients track the last applied sequence and ignore any incoming event whose sequence is ≤ the last applied value. This prevents out-of-order or duplicate events from causing stale state.
+
+10. **Service worker keepalive**: Chrome can terminate the background service worker after ~30s of inactivity. The background script registers a `chrome.alarms` alarm that fires every 25 minutes. The alarm handler is a no-op that simply keeps the worker alive while the extension is in a room.
 
 ---
 
